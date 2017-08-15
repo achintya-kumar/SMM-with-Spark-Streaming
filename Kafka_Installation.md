@@ -1,4 +1,4 @@
-## Kafka introduction and installation
+## Kafka Introduction and Installation
 ---
 
 ### Contents
@@ -9,16 +9,16 @@
     4. Kafka consumer
 2. Role of zookeeper
 3. Confluent platform
-  1. Need for Confluent
-  2. Downloading and installing confluent
+    1. Need for Confluent
+    2. Downloading and installing confluent
 4. Configuration
-  1. Zookeeper
-  2. Kafka server
-  3. Kafka Rest proxy server
+    1. Zookeeper
+    2. Kafka server
+    3. Kafka Rest proxy server
 5. Starting the services
-  1. Zookeeper server
-  2. Kafka server
-  3. Kafka Rest proxy server
+    1. Zookeeper server
+    2. Kafka server
+    3. Kafka Rest proxy server
 6. Creating a topic
 7. Starting console producer and consumer
 8. Connecting spark streaming with Kafka Server
