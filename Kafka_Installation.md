@@ -3,10 +3,10 @@
 
 ### Contents
 1. Kafka introduction
-  1. Kafka Server/broker
-  2. Kafka topic
-  3. Kafka producer
-  4. Kafka consumer
+    1. Kafka Server/broker
+    2. Kafka topic
+    3. Kafka producer
+    4. Kafka consumer
 2. Role of zookeeper
 3. Confluent platform
   1. Need for Confluent
