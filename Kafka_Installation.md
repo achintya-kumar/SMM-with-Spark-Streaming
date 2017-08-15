@@ -123,39 +123,39 @@ Before using starting to use Apache Kafka we need to configure the following ser
   ```
   _hostname:port -> hostname and port where zookeeper is running_
 
-    To receive all the messages from the beginning of a producer use the below command.
-    ```
+  To receive all the messages from the beginning of a producer use the below command.
+  ```
     $ bin/kafka-console-consumer.sh --zookeeper hostname:port --topic topicname --from-beginning
-    ```
-    Now send a message from the producer console and the message will be received in the consumer console.
+  ```
+  Now send a message from the producer console and the message will be received in the consumer console.
 
 #### 8. Connecting Spark Streaming with Kafka Server
-    We can connect Kafka server with Apache Spark to process the messages and store it to a database.
-    To use Kafka with Spark we need to add the below dependency in pom.xml file.
-    ```
-    <dependency>
-      <groupId>org.apache.spark</groupId>
-      <artifactId>spark-streaming-kafka_2.10</artifactId>
-      <version>1.6.0</version>
-    </dependency>
-    ```
-    To connect to kafka broker use the below code in spark java class.
-    ```
-    Map<String, String> kafkaParameters = new HashMap<String, String>();
-    kafkaParameters .put("bootstrap.servers", "hostname:port");
-    Set<String> topic = Collections.singleton("topicname");
-    ```
-    where   
-    _hostname:port -> hostname and port where Kafka Server is running_
+We can connect Kafka server with Apache Spark to process the messages and store it to a database.
+To use Kafka with Spark we need to add the below dependency in pom.xml file.
+```
+<dependency>
+  <groupId>org.apache.spark</groupId>
+  <artifactId>spark-streaming-kafka_2.10</artifactId>
+  <version>1.6.0</version>
+</dependency>
+```
+To connect to kafka broker use the below code in spark java class.
+```
+Map<String, String> kafkaParameters = new HashMap<String, String>();
+kafkaParameters .put("bootstrap.servers", "hostname:port");
+Set<String> topic = Collections.singleton("topicname");
+```
+where   
+_hostname:port -> hostname and port where Kafka Server is running_
 
-    Once the connection is established we can receive the messages from the broker using the below code.
-    ```
-    JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParameters , topic);
-    JavaDStream<String> messages = kafkaStreams.map(Tuple2::_2);
-    ```
-    where   
-    _ssc -> spark streaming context
-    topic -> set object which contains the list of topics_
+Once the connection is established we can receive the messages from the broker using the below code.
+```
+JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParameters , topic);
+JavaDStream<String> messages = kafkaStreams.map(Tuple2::_2);
+```
+where   
+_ssc -> spark streaming context
+topic -> set object which contains the list of topics_
 
 #### 9. Providing input JSON data for Kafka Server
 We can provide JSON data to Kafka Server using the below curl command in the terminal.
