@@ -176,7 +176,7 @@ hostname -> hostname of the REST server
 
 - Go back to the barefoot directory and run the below command.
 ```
-$ python util/submit/stream.py --host localhost --port 1234 --file src/test/resources/com/bmwcarit/barefoot/matcher/x0001-001.json
+$ python util/submit/stream.py --file src/test/resources/com/bmwcarit/barefoot/matcher/x0001-001.json
 ```
 This command generates the above mentioned GPS data that contains  time, ID and GPS position.
 
