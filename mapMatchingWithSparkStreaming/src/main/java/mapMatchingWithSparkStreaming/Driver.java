@@ -109,7 +109,7 @@ public class Driver {
 				return state;
 			}
 		});
-		
+		 
 		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(x -> "Result = " + x.sequence().get(0).point().geometry().getY() + ", " + x.sequence().get(0).point().geometry().getX()).print();
 		
 		JavaPairDStream<String, String> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(v -> v.toJSON().toString());
