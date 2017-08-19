@@ -23,7 +23,6 @@ import com.bmwcarit.barefoot.roadmap.RoadPoint;
 import com.bmwcarit.barefoot.roadmap.TimePriority;
 import com.bmwcarit.barefoot.spatial.Geography;
 import com.bmwcarit.barefoot.topology.Dijkstra;
-import com.bmwcarit.barefoot.util.SourceException;
 
 /**
  * 
@@ -35,6 +34,8 @@ public class BroadcastUtility implements Serializable{
 
 	private static final long serialVersionUID = 1L;
 	
+	private RoadMap map;
+	
 	private Matcher matcher;
 	
 	Configuration hBaseConfiguration;
@@ -45,32 +46,34 @@ public class BroadcastUtility implements Serializable{
 	
 	public BroadcastUtility() {}
 	
+	public RoadMap getRoadMap() {
+		synchronized (this) {
+			if(map != null) {
+				return map;
+			} else {
+				Properties oberbayern_properties = new Properties();
+				oberbayern_properties.put("database.host", "172.17.0.1");
+				oberbayern_properties.put("database.port", "5432");
+				oberbayern_properties.put("database.name", "oberbayern");
+				oberbayern_properties.put("database.table", "bfmap_ways");
+				oberbayern_properties.put("database.user", "osmuser");
+				oberbayern_properties.put("database.password", "pass");
+				
+				map = Loader.roadmap(oberbayern_properties, true).construct();
+				return map;
+			}
+		}
+	}
+	
 	public Matcher getMatcher() {
 		synchronized (this) {
 			if(matcher != null) {
 				return matcher;
 			} else {
-				RoadMap map;
-				try {
-					Properties oberbayern_properties = new Properties();
-					oberbayern_properties.put("database.host", "172.17.0.1");
-					oberbayern_properties.put("database.port", "5432");
-					oberbayern_properties.put("database.name", "oberbayern");
-					oberbayern_properties.put("database.table", "bfmap_ways");
-					oberbayern_properties.put("database.user", "osmuser");
-					oberbayern_properties.put("database.password", "pass");
-					
-					map = Loader.roadmap(oberbayern_properties, true).construct();
-					matcher = new Matcher(map, new Dijkstra<Road, RoadPoint>(), new TimePriority(), new Geography());
-					return matcher;
-				} catch (SourceException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				
+				matcher = new Matcher(getRoadMap(), new Dijkstra<Road, RoadPoint>(), new TimePriority(), new Geography());
+				return matcher;
 			}
 		}
-		return null;
 	}
 	
 	public Configuration getHbaseConfiguration() {
@@ -123,7 +126,7 @@ public class BroadcastUtility implements Serializable{
 	    Get g = new Get(Bytes.toBytes(key));
 
 	    // Reading the data
-	    Result result = table.get(g);
+	    Result result = getTable().get(g);
 
 	    // Reading values from Result class object
 	    byte [] value = result.getValue(Bytes.toBytes("kstate"),Bytes.toBytes("json"));

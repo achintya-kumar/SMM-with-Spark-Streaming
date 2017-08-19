@@ -9,7 +9,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+
 import kafka.serializer.StringDecoder;
+
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -21,6 +23,7 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaDStream;
@@ -30,8 +33,11 @@ import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 import org.json.JSONObject;
 
+
 import scala.Tuple2;
 
+
+import com.bmwcarit.barefoot.matcher.MatcherFactory;
 import com.bmwcarit.barefoot.matcher.MatcherKState;
 import com.bmwcarit.barefoot.matcher.MatcherSample;
 
@@ -87,9 +93,21 @@ public class Driver {
 			
 			return listOfSamples;
 		});
-		
 		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples.mapValues(v -> {
-			return broadcasted.getValue().getMatcher().mmatch(v, 1, 150);
+			System.out.println("id = " + v.get(0).id());
+			System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSON(v.get(0).id()));
+			String oldKstateJSON = broadcasted.getValue().getKstateJSON(v.get(0).id());
+			if(oldKstateJSON == null)
+				return broadcasted.getValue().getMatcher().mmatch(v, 1, 150);
+			else {
+				MatcherKState state = new MatcherKState(new JSONObject(oldKstateJSON), new MatcherFactory(broadcasted.getValue().getRoadMap()));
+				System.out.println("reconstructedJSON = " + state.toJSON());
+				for(MatcherSample sample : v)
+					state.update(broadcasted.getValue().getMatcher().execute(state.vector(), state.sample(), sample), sample);
+					
+				System.out.println("found state = " + state);
+				return state;
+			}
 		});
 		
 		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(x -> "Result = " + x.sequence().get(0).point().geometry().getY() + ", " + x.sequence().get(0).point().geometry().getX()).print();
