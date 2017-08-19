@@ -9,7 +9,9 @@ import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.ConnectionFactory;
+import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 
@@ -113,6 +115,25 @@ public class BroadcastUtility implements Serializable{
 		getTable().put(p);
 		
 		return true;
+	}
+	
+	public String getKstateJSON(String key) throws IOException {
+		
+		// Instantiating Get class
+	    Get g = new Get(Bytes.toBytes(key));
+
+	    // Reading the data
+	    Result result = table.get(g);
+
+	    // Reading values from Result class object
+	    byte [] value = result.getValue(Bytes.toBytes("kstate"),Bytes.toBytes("json"));
+
+	    // Printing the values
+	    String json = Bytes.toString(value);
+	      
+	    System.out.println("name: " + json);
+	    
+	    return json;
 	}
 	
 
