@@ -13,6 +13,13 @@
 		</pluginRepository>
 	</pluginRepositories>
 
+	<repositories>
+		<repository>
+			<id>cloudera</id>
+			<url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+		</repository>
+	</repositories>
+
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
@@ -45,10 +52,28 @@
 			<version>1.6.0</version>
 		</dependency>
 
+		<!-- Barefoot dependencies being served from within local .m2 directory -->
 		<dependency>
 			<groupId>com.bmw-carit</groupId>
 			<artifactId>barefoot</artifactId>
 			<version>0.1.1</version>
+		</dependency>
+
+		<!-- HBase-Spark dependencies -->
+		<dependency>
+			<groupId>org.apache.hbase</groupId>
+			<artifactId>hbase-client</artifactId>
+			<version>1.2.0-cdh5.8.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.hadoop</groupId>
+			<artifactId>hadoop-client</artifactId>
+			<version>2.6.0</version>
+		</dependency>
+		<dependency>
+			<groupId>org.apache.hbase</groupId>
+			<artifactId>hbase-spark</artifactId>
+			<version>1.2.0-cdh5.8.0</version>
 		</dependency>
 	</dependencies>
 </project>

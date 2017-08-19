@@ -11,6 +11,14 @@ import java.util.Set;
 
 import kafka.serializer.StringDecoder;
 
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.hbase.HBaseConfiguration;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.ZooKeeperConnectionException;
+import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.broadcast.Broadcast;
@@ -22,20 +30,30 @@ import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 import org.json.JSONObject;
 
+import scala.Tuple2;
+
 import com.bmwcarit.barefoot.matcher.MatcherKState;
 import com.bmwcarit.barefoot.matcher.MatcherSample;
 
-import scala.Tuple2;
+/**
+ * 
+ * @author Achintya Kumar, Nishanth EV
+ *
+ */
 
 public class Driver {
-	
-	static int rowId = 1;
 
 	public static void main(String[] args) throws InterruptedException, IOException {
 		
-		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[2]");
+		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[4]");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(20000));
+		
+		//Create table if it doesn't exist
+		Configuration hBaseConfiguration = HBaseConfiguration.create();
+		initializeHBaseTable(hBaseConfiguration);
+
+	    
 		
 		Broadcast<BroadcastUtility> broadcasted = ssc.sparkContext().broadcast(new BroadcastUtility());
 		
@@ -78,10 +96,46 @@ public class Driver {
 		
 		JavaPairDStream<String, String> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(v -> v.toJSON().toString());
 		
+		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON.foreachRDD(rdd -> {
+			rdd.foreach(v -> {
+				println(v._1 + ", " + v._2);
+				broadcasted.getValue().savePair(new String(v._1), new String(v._2));
+			});
+		});
 		
-
+		//hbaseContext.streamBulkPut(linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON, TableName.valueOf("samples"), null);
+		
 		ssc.start();
 		ssc.awaitTermination();
 	}
+	
+	private static void initializeHBaseTable(Configuration con) throws MasterNotRunningException, ZooKeeperConnectionException, IOException {
+		
+		  System.out.println(System.currentTimeMillis());
+	      // Instantiating HbaseAdmin class
+	      HBaseAdmin admin = new HBaseAdmin(con);
+	      
+	      // Instantiating table descriptor class
+	      HTableDescriptor tableDescriptor = new HTableDescriptor();
+	      tableDescriptor.setName(Bytes.toBytes("samples"));
+
+	      // Adding column families to table descriptor
+	      tableDescriptor.addFamily(new HColumnDescriptor("kstate"));
+
+	      // Execute the table through admin
+	      if(!admin.tableExists(Bytes.toBytes("samples"))) {
+	    	  admin.createTable(tableDescriptor);
+	    	  System.out.println(" Table created ");
+	      } else 
+	    	  System.out.println("Table already exists!");
+	      
+	      System.out.println(System.currentTimeMillis());
+	}
+	
+	private static void println(String s) {
+		System.out.println("outout = " + s);
+		
+	}
+	
 	
 }
