@@ -9,9 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-
 import kafka.serializer.StringDecoder;
-
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.HBaseConfiguration;
@@ -23,7 +21,6 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
-import org.apache.spark.api.java.function.Function;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaDStream;
@@ -33,9 +30,7 @@ import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 import org.json.JSONObject;
 
-
 import scala.Tuple2;
-
 
 import com.bmwcarit.barefoot.matcher.MatcherFactory;
 import com.bmwcarit.barefoot.matcher.MatcherKState;
@@ -95,15 +90,22 @@ public class Driver {
 		});
 		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples.mapValues(v -> {
 			System.out.println("id = " + v.get(0).id());
-			System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSON(v.get(0).id()));
-			String oldKstateJSON = broadcasted.getValue().getKstateJSON(v.get(0).id());
+			System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id()));
+			String oldKstateJSON = broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id());
 			if(oldKstateJSON == null)
-				return broadcasted.getValue().getMatcher().mmatch(v, 1, 150);
+				return broadcasted.getValue().getBarefootMatcher().mmatch(v, 1, 150);
 			else {
 				MatcherKState state = new MatcherKState(new JSONObject(oldKstateJSON), new MatcherFactory(broadcasted.getValue().getRoadMap()));
 				System.out.println("reconstructedJSON = " + state.toJSON());
+				
+				//Unsorted samples (wrt time) leads to out-of-order RuntimeException. 
+				Collections.sort(v, (a, b) -> { 
+					Long aTime = new Long(a.time());
+					Long bTime = new Long(b.time());
+					return aTime.compareTo(bTime);
+				});
 				for(MatcherSample sample : v)
-					state.update(broadcasted.getValue().getMatcher().execute(state.vector(), state.sample(), sample), sample);
+					state.update(broadcasted.getValue().getBarefootMatcher().execute(state.vector(), state.sample(), sample), sample);
 					
 				System.out.println("found state = " + state);
 				return state;
@@ -117,11 +119,9 @@ public class Driver {
 		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON.foreachRDD(rdd -> {
 			rdd.foreach(v -> {
 				println(v._1 + ", " + v._2);
-				broadcasted.getValue().savePair(new String(v._1), new String(v._2));
+				broadcasted.getValue().savePairToHBase(new String(v._1), new String(v._2));
 			});
 		});
-		
-		//hbaseContext.streamBulkPut(linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON, TableName.valueOf("samples"), null);
 		
 		ssc.start();
 		ssc.awaitTermination();

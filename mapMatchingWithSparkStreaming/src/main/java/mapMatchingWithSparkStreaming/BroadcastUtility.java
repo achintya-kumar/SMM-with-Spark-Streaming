@@ -2,6 +2,8 @@ package mapMatchingWithSparkStreaming;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.Collections;
+import java.util.List;
 import java.util.Properties;
 
 import org.apache.hadoop.conf.Configuration;
@@ -16,6 +18,7 @@ import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
 
 import com.bmwcarit.barefoot.matcher.Matcher;
+import com.bmwcarit.barefoot.matcher.MatcherSample;
 import com.bmwcarit.barefoot.roadmap.Loader;
 import com.bmwcarit.barefoot.roadmap.Road;
 import com.bmwcarit.barefoot.roadmap.RoadMap;
@@ -34,6 +37,7 @@ public class BroadcastUtility implements Serializable{
 
 	private static final long serialVersionUID = 1L;
 	
+	//Initialization to take place on respective worker nodes' JVMs
 	private RoadMap map;
 	
 	private Matcher matcher;
@@ -51,6 +55,7 @@ public class BroadcastUtility implements Serializable{
 			if(map != null) {
 				return map;
 			} else {
+				// These hardcoded attributes shall later be supplied through command-line arguments
 				Properties oberbayern_properties = new Properties();
 				oberbayern_properties.put("database.host", "172.17.0.1");
 				oberbayern_properties.put("database.port", "5432");
@@ -65,7 +70,7 @@ public class BroadcastUtility implements Serializable{
 		}
 	}
 	
-	public Matcher getMatcher() {
+	public Matcher getBarefootMatcher() {
 		synchronized (this) {
 			if(matcher != null) {
 				return matcher;
@@ -98,7 +103,7 @@ public class BroadcastUtility implements Serializable{
 		}
 	}
 	
-	public Table getTable() throws IOException{
+	public Table getHBaseTable() throws IOException{
 		synchronized (this) {
 			if(table != null) {
 				return table;
@@ -109,35 +114,43 @@ public class BroadcastUtility implements Serializable{
 		}
 	} 
 	
-	public boolean savePair(String key, String value) throws IOException {
+	public boolean savePairToHBase(String key, String value){
 		
+		// Instantiating Put class
 		Put p = new Put(Bytes.toBytes(key)); 
 		
+		// Adding value to save to correct HBase coordinates
 		p.addColumn(Bytes.toBytes("kstate"), Bytes.toBytes("json"),Bytes.toBytes(value));
 		
-		getTable().put(p);
+		// Saving the value
+		try {
+			getHBaseTable().put(p);
+		} catch (IOException e) {
+			e.printStackTrace();
+			return false;
+		}
 		
 		return true;
 	}
 	
-	public String getKstateJSON(String key) throws IOException {
+	public String getKstateJSONfromHBase(String key) throws IOException {
 		
 		// Instantiating Get class
 	    Get g = new Get(Bytes.toBytes(key));
 
 	    // Reading the data
-	    Result result = getTable().get(g);
+	    Result result = getHBaseTable().get(g);
 
 	    // Reading values from Result class object
 	    byte [] value = result.getValue(Bytes.toBytes("kstate"),Bytes.toBytes("json"));
 
-	    // Printing the values
+	    // Converting the value to String
 	    String json = Bytes.toString(value);
-	      
-	    System.out.println("name: " + json);
 	    
 	    return json;
 	}
 	
 
 }
+
+
