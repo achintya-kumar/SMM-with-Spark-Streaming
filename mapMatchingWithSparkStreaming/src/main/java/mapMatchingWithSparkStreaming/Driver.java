@@ -3,6 +3,7 @@ package mapMatchingWithSparkStreaming;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -55,8 +56,8 @@ public class Driver {
 		initializeHBaseTable(hBaseConfiguration);
 
 	    
-		
-		Broadcast<BroadcastUtility> broadcasted = ssc.sparkContext().broadcast(new BroadcastUtility());
+		//Broadcasting some utilities
+		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities());
 		
 		System.out.println("streaming");
 		
@@ -65,20 +66,22 @@ public class Driver {
 		kafkaParams.put("bootstrap.servers", "10.0.2.15:9092");
 		Set<String> topic = Collections.singleton("gps");
 		
-		
+		//Getting streams from Kafka
 		JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
 		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2);
+		
+		//Creating a pair Dstream with the ID as the key
 		JavaPairDStream<String, String> linesInPairedFormWithID = lines.mapToPair(line -> {
 			JSONObject json = new JSONObject(line);
 			String deviceID = (String) json.get("id");
 			return new Tuple2<>(deviceID, line);
 		});
 		
-		//lines.print();
-		//linesInPairedFormWithID.print();
+		//Grouping the Dstreams by the key
 		JavaPairDStream<String, Iterable<String>> linesInPairedFormWithIDAndGroupedByID = linesInPairedFormWithID.groupByKey();
 		linesInPairedFormWithIDAndGroupedByID.print();
 		
+		//
 		JavaPairDStream<String, List<MatcherSample>> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples = linesInPairedFormWithIDAndGroupedByID.mapValues(v -> {
 			Iterator<String> iterator = v.iterator();
 			List<MatcherSample> listOfSamples = new ArrayList<>();
@@ -104,6 +107,7 @@ public class Driver {
 					Long bTime = new Long(b.time());
 					return aTime.compareTo(bTime);
 				});
+				//Updating the existing state retrieved from HBase
 				for(MatcherSample sample : v)
 					state.update(broadcasted.getValue().getBarefootMatcher().execute(state.vector(), state.sample(), sample), sample);
 					
@@ -119,7 +123,7 @@ public class Driver {
 		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON.foreachRDD(rdd -> {
 			rdd.foreach(v -> {
 				println(v._1 + ", " + v._2);
-				broadcasted.getValue().savePairToHBase(new String(v._1), new String(v._2));
+				broadcasted.getValue().saveKstateJSONtoHBase(new String(v._1), new String(v._2));
 			});
 		});
 		

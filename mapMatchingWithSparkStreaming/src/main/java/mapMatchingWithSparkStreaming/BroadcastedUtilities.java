@@ -33,7 +33,7 @@ import com.bmwcarit.barefoot.topology.Dijkstra;
  *
  */
 
-public class BroadcastUtility implements Serializable{
+public class BroadcastedUtilities implements Serializable{
 
 	private static final long serialVersionUID = 1L;
 	
@@ -48,7 +48,7 @@ public class BroadcastUtility implements Serializable{
 	
 	Table table;
 	
-	public BroadcastUtility() {}
+	public BroadcastedUtilities() {}
 	
 	public RoadMap getRoadMap() {
 		synchronized (this) {
@@ -114,7 +114,10 @@ public class BroadcastUtility implements Serializable{
 		}
 	} 
 	
-	public boolean savePairToHBase(String key, String value){
+	public boolean saveKstateJSONtoHBase(String key, String value){
+		
+		// Removing funny characters(e.g. \) from the key
+		key = key.replace("\\", "");
 		
 		// Instantiating Put class
 		Put p = new Put(Bytes.toBytes(key)); 
@@ -134,6 +137,9 @@ public class BroadcastUtility implements Serializable{
 	}
 	
 	public String getKstateJSONfromHBase(String key) throws IOException {
+		
+		// Removing funny characters(e.g. \) from the key
+		key = key.replace("\\", "");
 		
 		// Instantiating Get class
 	    Get g = new Get(Bytes.toBytes(key));
