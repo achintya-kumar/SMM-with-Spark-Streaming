@@ -1,10 +1,18 @@
-package simpleClient;
+package request;
 
 import java.text.SimpleDateFormat;
 import java.util.Random;
 
 import com.google.gson.Gson;
 
+/**
+ * 
+ * @author Achintya Kumar, Nishanth EV
+ * 
+ * This class serves as a template for preparing a GPS sample json.
+ * It takes latitudes, longitudes, timestamp and deviceID and converts it into
+ * the prescribed sample JSON format.
+ */
 public class RequestTemplate {
 	private String point;
 	private String time;

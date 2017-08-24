@@ -1,5 +1,14 @@
 package response;
 
+/**
+ * 
+ * @author Achintya Kumar, Nishanth EV
+ *
+ *This class acts as a holder of latitude/longitude pair.
+ *This would be later used to convert received JSON into a 
+ *Java object.
+ */
+
 public class Coordinates {
 	private Double latitude;
 	private Double longitude;

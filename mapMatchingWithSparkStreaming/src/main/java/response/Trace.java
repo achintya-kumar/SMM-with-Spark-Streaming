@@ -6,13 +6,16 @@ import java.util.List;
 
 import com.google.gson.Gson;
 
-import scala.Tuple2;
-
+/**
+ * 
+ * @author Achintya Kumar, Nishanth EV
+ * 
+ * This serves as a template to convert the received JSON response from HBase
+ * into a Java object.
+ *
+ */
 public class Trace implements Serializable{
-	
-	/**
-	 * 
-	 */
+
 	private static final long serialVersionUID = 1L;
 	private String deviceID;
 	private List<Coordinates> coordinates = new ArrayList<>();
@@ -43,6 +46,7 @@ public class Trace implements Serializable{
 		this.coordinates = coordinates;
 	}
 
+	//Example forward-reverse conversions of Trace objects
 	public static void main(String[] args) {
 		Trace trace = new Trace();
 		trace.setDeviceID("sup1123");
@@ -52,6 +56,11 @@ public class Trace implements Serializable{
 		
 		Gson gson = new Gson();
 		System.out.println(gson.toJson(trace));
+		
+		Trace trace2 = gson.fromJson(gson.toJson(trace), Trace.class);
+		
+		System.out.println(trace2);
+		
 	}
 	
 	
