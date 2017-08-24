@@ -22,7 +22,8 @@
 hs_err_pid*
 
 # Barefoot map file
-.bfmap
+mapMatchingWithSparkStreaming/oberbayern.bfmap
+
 
 # Eclipse settings folder
 *.prefs

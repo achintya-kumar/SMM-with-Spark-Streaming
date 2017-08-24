@@ -119,12 +119,8 @@ public class BroadcastedUtilities implements Serializable {
 
 	public Table getHBaseTable(String tableName) throws IOException {
 		synchronized (this) {
-			if (table != null) {
-				return table;
-			} else {
 				table = getConnection().getTable(TableName.valueOf(tableName));
 				return table;
-			}
 		}
 	}
 

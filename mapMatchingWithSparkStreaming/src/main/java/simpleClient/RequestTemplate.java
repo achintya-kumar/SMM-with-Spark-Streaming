@@ -5,15 +5,20 @@ import java.util.Random;
 
 import com.google.gson.Gson;
 
-public class RequestAttributes {
+public class RequestTemplate {
 	private String point;
 	private String time;
 	private String id;
 
-	public RequestAttributes() {
+	public RequestTemplate() {}
+
+	public RequestTemplate(String point, String time, String id) {
+		this.point = point;
+		this.time = time;
+		this.id = id;
 	}
 
-	public RequestAttributes(Double latitude, Double longitude, long date, String id) {
+	public RequestTemplate(Double latitude, Double longitude, long date, String id) {
 		this.point = "POINT(" + longitude + " " + longitude + ")";
 		SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ssZ");
 		this.setTime(simpleDateFormat.format(date).toString());
@@ -50,7 +55,7 @@ public class RequestAttributes {
 	
 	//This shows what the JSON-ization would result in.
 	public static void main(String[] args) {
-		RequestAttributes ra = new RequestAttributes(new Random().nextDouble(), new Random().nextDouble(), System.currentTimeMillis(), "sup");
+		RequestTemplate ra = new RequestTemplate(new Random().nextDouble(), new Random().nextDouble(), System.currentTimeMillis(), "sup");
 		Gson gson = new Gson();
 		System.out.println(gson.toJson(ra));
 	}
