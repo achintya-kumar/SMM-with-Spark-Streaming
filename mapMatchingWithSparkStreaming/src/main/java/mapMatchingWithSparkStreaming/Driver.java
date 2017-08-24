@@ -46,118 +46,157 @@ import com.bmwcarit.barefoot.matcher.MatcherSample;
 public class Driver {
 
 	public static void main(String[] args) throws InterruptedException, IOException {
-		
+
 		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[4]");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(20000));
-		
-		//Create table if it doesn't exist
+
+		// Create table if it doesn't exist
 		Configuration hBaseConfiguration = HBaseConfiguration.create();
 		initializeHBaseTable(hBaseConfiguration);
 
-	    
-		//Broadcasting some utilities
+		// Broadcasting some utilities
 		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities());
-		
+
 		System.out.println("streaming");
-		
-		//Kafka streaming
+
+		// Kafka streaming
 		Map<String, String> kafkaParams = new HashMap<String, String>();
 		kafkaParams.put("bootstrap.servers", "10.0.2.15:9092");
 		Set<String> topic = Collections.singleton("gps");
-		
-		//Getting streams from Kafka
+
+		// Getting streams from Kafka
 		JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
 		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2);
-		
-		//Creating a pair Dstream with the ID as the key
+
+		// Creating a pair Dstream with the ID as the key
 		JavaPairDStream<String, String> linesInPairedFormWithID = lines.mapToPair(line -> {
-			JSONObject json = new JSONObject(line);
-			String deviceID = (String) json.get("id");
-			return new Tuple2<>(deviceID, line);
-		});
-		
-		//Grouping the Dstreams by the key
+					JSONObject json = new JSONObject(line);
+					String deviceID = (String) json.get("id");
+					return new Tuple2<>(deviceID, line);
+				});
+
+		// Grouping the Dstreams by the key
 		JavaPairDStream<String, Iterable<String>> linesInPairedFormWithIDAndGroupedByID = linesInPairedFormWithID.groupByKey();
 		linesInPairedFormWithIDAndGroupedByID.print();
-		
+
 		//
 		JavaPairDStream<String, List<MatcherSample>> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples = linesInPairedFormWithIDAndGroupedByID.mapValues(v -> {
-			Iterator<String> iterator = v.iterator();
-			List<MatcherSample> listOfSamples = new ArrayList<>();
-			while(iterator.hasNext()) {
-				listOfSamples.add(new MatcherSample(new JSONObject(iterator.next())));
-			}
-			
-			return listOfSamples;
-		});
-		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples.mapValues(v -> {
-			System.out.println("id = " + v.get(0).id());
-			System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id()));
-			String oldKstateJSON = broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id());
-			if(oldKstateJSON == null)
-				return broadcasted.getValue().getBarefootMatcher().mmatch(v, 1, 150);
-			else {
-				MatcherKState state = new MatcherKState(new JSONObject(oldKstateJSON), new MatcherFactory(broadcasted.getValue().getRoadMap()));
-				System.out.println("reconstructedJSON = " + state.toJSON());
-				
-				//Unsorted samples (wrt time) leads to out-of-order RuntimeException. 
-				Collections.sort(v, (a, b) -> { 
+					Iterator<String> iterator = v.iterator();
+					List<MatcherSample> listOfSamples = new ArrayList<>();
+					while (iterator.hasNext()) {
+						listOfSamples.add(new MatcherSample(new JSONObject(
+								iterator.next())));
+					}
+					return listOfSamples;
+				});
+		
+		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples
+				.mapValues(v -> {
+					System.out.println("id = " + v.get(0).id());
+					System.out.println("oldKstateJSON = "
+							+ broadcasted.getValue().getKstateJSONfromHBase(
+									v.get(0).id()));
+					String oldKstateJSON = broadcasted.getValue()
+							.getKstateJSONfromHBase(v.get(0).id());
+					if (oldKstateJSON == null)
+						return broadcasted.getValue().getBarefootMatcher()
+								.mmatch(v, 1, 150);
+					else {
+						MatcherKState state = new MatcherKState(new JSONObject(oldKstateJSON), new MatcherFactory(broadcasted.getValue().getRoadMap()));
+						System.out.println("reconstructedJSON = "
+								+ state.toJSON());
+
+				// Unsorted samples (wrt time) leads to out-of-order RuntimeException.
+				Collections.sort(v, (a, b) -> {
 					Long aTime = new Long(a.time());
 					Long bTime = new Long(b.time());
 					return aTime.compareTo(bTime);
 				});
-				//Updating the existing state retrieved from HBase
-				for(MatcherSample sample : v)
+				
+				// Updating the existing state retrieved from HBase
+				for (MatcherSample sample : v)
 					state.update(broadcasted.getValue().getBarefootMatcher().execute(state.vector(), state.sample(), sample), sample);
-					
+
 				System.out.println("found state = " + state);
 				return state;
 			}
 		});
-		 
-		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(x -> "Result = " + x.sequence().get(0).point().geometry().getY() + ", " + x.sequence().get(0).point().geometry().getX()).print();
 		
-		JavaPairDStream<String, String> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(v -> v.toJSON().toString());
 		
-		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON.foreachRDD(rdd -> {
-			rdd.foreach(v -> {
-				println(v._1 + ", " + v._2);
-				broadcasted.getValue().saveKstateJSONtoHBase(new String(v._1), new String(v._2));
+
+		/*linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState
+				.mapValues(
+						x -> "Result = "
+								+ x.sequence().get(0).point().geometry().getY()
+								+ ", "
+								+ x.sequence().get(0).point().geometry().getX())
+				.print();
+
+		JavaPairDStream<String, String> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState
+				.mapValues(v -> v.toJSON().toString());
+
+		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON
+				.foreachRDD(rdd -> {
+					rdd.foreach(v -> {
+						println(v._1 + ", " + v._2);
+						broadcasted.getValue().saveKstateJSONtoHBase(new String(v._1), new String(v._2));
+					});
+				});*/
+		
+		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.foreachRDD(rdd -> {
+			rdd.foreach(value -> {
+				println(value._1 + ", " + value._2.toJSON().toString());
+				broadcasted.getValue().saveKstateJSONtoHBase(new String(value._1), value._2);
 			});
 		});
-		
+
 		ssc.start();
 		ssc.awaitTermination();
 	}
-	
-	private static void initializeHBaseTable(Configuration con) throws MasterNotRunningException, ZooKeeperConnectionException, IOException {
+
+	private static void initializeHBaseTable(Configuration con)
+			throws MasterNotRunningException, ZooKeeperConnectionException,
+			IOException {
 		
-		  System.out.println(System.currentTimeMillis());
-	      // Instantiating HbaseAdmin class
-	      HBaseAdmin admin = new HBaseAdmin(con);
-	      
-	      // Instantiating table descriptor class
-	      HTableDescriptor tableDescriptor = new HTableDescriptor();
-	      tableDescriptor.setName(Bytes.toBytes("samples"));
+		//FOR TABLE 'samples'
+		// Instantiating HbaseAdmin class
+		HBaseAdmin admin = new HBaseAdmin(con);
 
-	      // Adding column families to table descriptor
-	      tableDescriptor.addFamily(new HColumnDescriptor("kstate"));
+		// Instantiating table descriptor class
+		HTableDescriptor tableDescriptor = new HTableDescriptor();
+		tableDescriptor.setName(Bytes.toBytes("samples"));
 
-	      // Execute the table through admin
-	      if(!admin.tableExists(Bytes.toBytes("samples"))) {
-	    	  admin.createTable(tableDescriptor);
-	    	  System.out.println(" Table created ");
-	      } else 
-	    	  System.out.println("Table already exists!");
-	      
-	      System.out.println(System.currentTimeMillis());
+		// Adding column families to table descriptor
+		tableDescriptor.addFamily(new HColumnDescriptor("kstate"));
+
+		// Execute the table through admin
+		if (!admin.tableExists(Bytes.toBytes("samples"))) {
+			admin.createTable(tableDescriptor);
+			System.out.println(" \'samples\' Table created ");
+		} else
+			System.out.println(" \'samples\'Table already exists!");
+
+		
+		//FOR TABLE 'results'
+		// Instantiating table descriptor class
+		HTableDescriptor anotherTableDescriptor = new HTableDescriptor();
+		anotherTableDescriptor.setName(Bytes.toBytes("results"));
+
+		// Adding column families to table descriptor
+		anotherTableDescriptor.addFamily(new HColumnDescriptor("pathTrace"));
+
+		// Execute the table through admin
+		if (!admin.tableExists(Bytes.toBytes("results"))) {
+			admin.createTable(anotherTableDescriptor);
+			System.out.println(" \'results\' Table created ");
+		} else
+			System.out.println(" \'results\'Table already exists!");
+
 	}
-	
+
 	private static void println(String s) {
 		System.out.println("outout = " + s);
-		
 	}
-	
-	
+
 }
