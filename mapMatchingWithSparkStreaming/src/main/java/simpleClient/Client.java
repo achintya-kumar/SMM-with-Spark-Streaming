@@ -10,11 +10,15 @@ import java.util.Base64;
 import org.json.JSONObject;
 
 public class Client {
-	private static final String USER_AGENT = "Mozilla/5.0";
+	private static String dataStoreAddress = "http://localhost:20550";
 	
-	private static void sendGet(String rowKey) throws Exception {
-
-        String url = "http://localhost:20550/samples/" + rowKey;
+	private static void sendGet(String rowKey, String dataStoreLink) throws Exception {
+		
+		if(dataStoreLink != null)
+			dataStoreAddress = dataStoreLink;
+		
+		
+        String url = dataStoreAddress + "/samples/" + rowKey;
 
         URL obj = new URL(url);
         HttpURLConnection con = (HttpURLConnection) obj.openConnection();
@@ -46,7 +50,7 @@ public class Client {
 	public static void main(String[] args) throws Exception {
 
         System.out.println("Sending HTTP GET request");
-        sendGet("achintya");
+        sendGet("achintya", null);
 
     }
 
