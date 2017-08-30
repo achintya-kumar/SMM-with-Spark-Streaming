@@ -31,8 +31,7 @@ mapMatchingWithSparkStreaming/oberbayern.bfmap
 .classpath
 
 # Project file
-.project
+*.project
 
 # Target folder
-
-target/
+tracker/target/
