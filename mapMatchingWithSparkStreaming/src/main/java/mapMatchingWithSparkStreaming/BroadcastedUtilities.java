@@ -27,6 +27,7 @@ import com.bmwcarit.barefoot.matcher.Matcher;
 import com.bmwcarit.barefoot.matcher.MatcherCandidate;
 import com.bmwcarit.barefoot.matcher.MatcherKState;
 import com.bmwcarit.barefoot.matcher.MatcherSample;
+import com.bmwcarit.barefoot.road.BfmapReader;
 import com.bmwcarit.barefoot.roadmap.Loader;
 import com.bmwcarit.barefoot.roadmap.Road;
 import com.bmwcarit.barefoot.roadmap.RoadMap;
@@ -36,6 +37,26 @@ import com.bmwcarit.barefoot.spatial.Geography;
 import com.bmwcarit.barefoot.topology.Dijkstra;
 import com.bmwcarit.barefoot.util.SourceException;
 import com.google.gson.Gson;
+
+
+
+
+
+
+
+
+
+import java.io.*;
+import java.util.*;
+import java.net.*;
+import java.nio.file.Files;
+
+import org.apache.hadoop.fs.*;
+import org.apache.hadoop.conf.*;
+import org.apache.hadoop.io.*;
+import org.apache.hadoop.mapred.*;
+import org.apache.hadoop.util.*;
+
 
 /**
  * 
@@ -61,28 +82,31 @@ public class BroadcastedUtilities implements Serializable {
 	public BroadcastedUtilities() {
 	}
 
-	public RoadMap getRoadMap() {
+	public RoadMap getRoadMap() throws IOException, URISyntaxException {
 		synchronized (this) {
 			if (map != null) {
 				return map;
 			} else {
-				// These hardcoded attributes shall later be supplied through
-				// command-line arguments
-				Properties oberbayern_properties = new Properties();
+				// These hardcoded attributes can later be supplied through
+				// command-line arguments.
+				// For this implementation, we have chosen HDFS as data-lake for storage of map files.
+				/*Properties oberbayern_properties = new Properties();
 				oberbayern_properties.put("database.host", "172.17.0.1");
 				oberbayern_properties.put("database.port", "5432");
 				oberbayern_properties.put("database.name", "oberbayern");
 				oberbayern_properties.put("database.table", "bfmap_ways");
 				oberbayern_properties.put("database.user", "osmuser");
-				oberbayern_properties.put("database.password", "pass");
-
-				map = Loader.roadmap(oberbayern_properties, true).construct();
+				oberbayern_properties.put("database.password", "pass");*/
+				
+				// Retrieving map file from HDFS. Sehr cool!
+				String absolutePath = readBfMapFileFromHDFS().getAbsolutePath();
+				map = RoadMap.Load(new BfmapReader(absolutePath)).construct();
 				return map;
 			}
 		}
 	}
 
-	public Matcher getBarefootMatcher() {
+	public Matcher getBarefootMatcher() throws IOException, URISyntaxException {
 		synchronized (this) {
 			if (matcher != null) {
 				return matcher;
@@ -211,53 +235,57 @@ public class BroadcastedUtilities implements Serializable {
 		return json;
 	}
 	
-	public static void main(String[] args) throws JSONException, SourceException, IOException {
-		System.out.println("starting...");
-		Properties oberbayern_properties = new Properties();
-		oberbayern_properties.put("database.host", "172.17.0.1");
-		oberbayern_properties.put("database.port", "5432");
-		oberbayern_properties.put("database.name", "oberbayern");
-		oberbayern_properties.put("database.table", "bfmap_ways");
-		oberbayern_properties.put("database.user", "osmuser");
-		oberbayern_properties.put("database.password", "pass");
+	public static void main(String[] args) throws JSONException, SourceException, IOException, URISyntaxException {
+//		System.gc();
+//		System.out.println("starting...");
+//		Properties oberbayern_properties = new Properties();
+//		oberbayern_properties.put("database.host", "172.17.0.1");
+//		oberbayern_properties.put("database.port", "5432");
+//		oberbayern_properties.put("database.name", "oberbayern");
+//		oberbayern_properties.put("database.table", "bfmap_ways");
+//		oberbayern_properties.put("database.user", "osmuser");
+//		oberbayern_properties.put("database.password", "pass");
+//		
+//		
+//		//RoadMap map = Loader.roadmap(oberbayern_properties, true).construct();
+//		String absolutePath = readBfMapFileFromHDFS().getAbsolutePath();
+//		RoadMap map = RoadMap.Load(new BfmapReader(absolutePath)).construct();
+//		System.out.println("Map created at = " + System.currentTimeMillis());
+//		
+//
+//		// Instantiate matcher and state data structure
+//		Matcher matcher = new Matcher(map, new Dijkstra<Road, RoadPoint>(), new TimePriority(), new Geography());
+//		System.out.println("Matcher created as = " + System.currentTimeMillis());
+//		
+//		/*Performing map-matching for the following position samples
+//		 * 1. {"point":"POINT(11.564388282625075 48.16350662940509)","time":"2014-09-10 06:54:07+0200","id":"\\x0001"},
+//		 * 2. {"point":"POINT(11.563678490482323 48.16198390379898)"
+//		 * 		,"time":"2014-09-10 06:54:22+0200","id":"\\x0001"},
+//		 * 3. {"point":"POINT(11.563473064247667 48.16122306758928)"
+//		 * 		,"time":"2014-09-10 06:54:37+0200","id":"\\x0001"}
+//		 */
+//		
+//		
+//		// Input as sample batch (offline) or sample stream (online)
+//		List<MatcherSample> samples = new ArrayList<>();
+//		samples.add(new MatcherSample(new JSONObject("{\"point\":\"POINT(11.564388282625075 48.16350662940509)\" ,\"time\":\"2014-09-10 06:54:07+0200\",\"id\":\"\\x0001\"}")));
+//		
+//		samples.add(new MatcherSample(new JSONObject("{\"point\":\"POINT(11.563678490482323 48.16198390379898)\" ,\"time\":\"2014-09-10 06:54:22+0200\",\"id\":\"\\x0001\"}")));
+//		samples.add(new MatcherSample(new JSONObject("{\"point\":\"POINT(11.563473064247667 48.16122306758928)\" ,\"time\":\"2014-09-10 06:54:37+0200\",\"id\":\"\\x0001\"}")));
+//		System.out.println("Samples initialized = " + System.currentTimeMillis());
+//		
+//
+//		// Match full sequence of samples
+//		MatcherKState state = matcher.mmatch(samples, 1, 500);
+//		System.out.println("Matching done at = " + System.currentTimeMillis());
+//		
+//		// Access map matching result: sequence for all samples
+//		for (MatcherCandidate cand : state.sequence()) {
+//			System.out.println("GPS position = " + cand.point().geometry().getY() + ", " + cand.point().geometry().getX() + ", at time = ");; // GPS position (on the road)
+//		}
+//		
+//		System.out.println(state.toJSON());
 		
-		
-		RoadMap map = Loader.roadmap(oberbayern_properties, true).construct();
-		System.out.println("Map created at = " + System.currentTimeMillis());
-		
-
-		// Instantiate matcher and state data structure
-		Matcher matcher = new Matcher(map, new Dijkstra<Road, RoadPoint>(), new TimePriority(), new Geography());
-		System.out.println("Matcher created as = " + System.currentTimeMillis());
-		
-		/*Performing map-matching for the following position samples
-		 * 1. {"point":"POINT(11.564388282625075 48.16350662940509)","time":"2014-09-10 06:54:07+0200","id":"\\x0001"},
-		 * 2. {"point":"POINT(11.563678490482323 48.16198390379898)"
-		 * 		,"time":"2014-09-10 06:54:22+0200","id":"\\x0001"},
-		 * 3. {"point":"POINT(11.563473064247667 48.16122306758928)"
-		 * 		,"time":"2014-09-10 06:54:37+0200","id":"\\x0001"}
-		 */
-		
-		
-		// Input as sample batch (offline) or sample stream (online)
-		List<MatcherSample> samples = new ArrayList<>();
-		samples.add(new MatcherSample(new JSONObject("{\"point\":\"POINT(11.564388282625075 48.16350662940509)\" ,\"time\":\"2014-09-10 06:54:07+0200\",\"id\":\"\\x0001\"}")));
-		
-		samples.add(new MatcherSample(new JSONObject("{\"point\":\"POINT(11.563678490482323 48.16198390379898)\" ,\"time\":\"2014-09-10 06:54:22+0200\",\"id\":\"\\x0001\"}")));
-		samples.add(new MatcherSample(new JSONObject("{\"point\":\"POINT(11.563473064247667 48.16122306758928)\" ,\"time\":\"2014-09-10 06:54:37+0200\",\"id\":\"\\x0001\"}")));
-		System.out.println("Samples initialized = " + System.currentTimeMillis());
-		
-
-		// Match full sequence of samples
-		MatcherKState state = matcher.mmatch(samples, 1, 500);
-		System.out.println("Matching done at = " + System.currentTimeMillis());
-		
-		// Access map matching result: sequence for all samples
-		for (MatcherCandidate cand : state.sequence()) {
-			System.out.println("GPS position = " + cand.point().geometry().getY() + ", " + cand.point().geometry().getX() + ", at time = ");; // GPS position (on the road)
-		}
-		
-		System.out.println(state.toJSON());
 	}
 	
 	public List<Long> retrieveTimestamps(MatcherKState state) {
@@ -265,5 +293,23 @@ public class BroadcastedUtilities implements Serializable {
 		state.samples().forEach(s -> timestamps.add(s.time()));
 		return timestamps;
 	}
+	
+	
+	public static File readBfMapFileFromHDFS() throws IOException, URISyntaxException {
+		Configuration configuratione = new Configuration();
+        FileSystem fs = FileSystem.get(new URI("hdfs://quickstart.cloudera:8020"), configuratione);
+        Path sourcePath = new Path("/user/cloudera/maps/oberbayern.bfmap"); // <-- I have copied the .bfmap file to this location inside HDFS
+        Path targetPath = new Path("."); // <-- We shall copy the .bfmap file above to the root of the working directory.
+        
+        // Copying from HDFS to local disk
+        fs.copyToLocalFile(sourcePath, targetPath); 
+        
+        // This file object shall be used to create RoadMap object 
+        File file = new File("oberbayern.bfmap");
+        
+        return file;
+	}
+	
+	
 
 }
