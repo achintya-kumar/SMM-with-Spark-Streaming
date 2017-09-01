@@ -44,8 +44,9 @@ import com.bmwcarit.barefoot.matcher.MatcherSample;
 
 public class Driver {
 
-	public static void main(String[] args) throws InterruptedException, IOException {
-
+	public static void main(String[] args) throws Exception {
+		
+		// Initializing SparkConf with 4 threads and StreamingContext with a batch interval of 20 seconds
 		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[4]");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(20000));
@@ -56,12 +57,13 @@ public class Driver {
 
 		// Broadcasting some utilities
 		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities());
-
-		System.out.println("streaming");
+		
+		// Feeding Kafka with samples
+		simpleClient.Client.feedKafka();
 
 		// Kafka streaming
 		Map<String, String> kafkaParams = new HashMap<String, String>();
-		kafkaParams.put("bootstrap.servers", "10.0.2.15:9092");
+		kafkaParams.put("bootstrap.servers", "localhost:9092");
 		Set<String> topic = Collections.singleton("gps");
 
 		// Getting streams from Kafka
@@ -154,6 +156,13 @@ public class Driver {
 		ssc.awaitTermination();
 	}
 
+	/**
+	 * Initializing empty tables is necessary as computation on samples is sensitive to time information.
+	 * @param con
+	 * @throws MasterNotRunningException
+	 * @throws ZooKeeperConnectionException
+	 * @throws IOException
+	 */
 	private static void initializeHBaseTable(Configuration con)
 			throws MasterNotRunningException, ZooKeeperConnectionException,
 			IOException {
@@ -173,8 +182,12 @@ public class Driver {
 		if (!admin.tableExists(Bytes.toBytes("samples"))) {
 			admin.createTable(tableDescriptor);
 			System.out.println(" \'samples\' Table created ");
-		} else
-			System.out.println(" \'samples\'Table already exists!");
+		} else {
+			System.out.println(" \'samples\' Table already exists! Dropping and re-creating it...");
+			admin.disableTable(Bytes.toBytes("samples"));
+			admin.deleteTable(Bytes.toBytes("samples"));
+			admin.createTable(tableDescriptor);
+		}
 
 		
 		//FOR TABLE 'results'
@@ -189,8 +202,12 @@ public class Driver {
 		if (!admin.tableExists(Bytes.toBytes("results"))) {
 			admin.createTable(anotherTableDescriptor);
 			System.out.println(" \'results\' Table created ");
-		} else
-			System.out.println(" \'results\'Table already exists!");
+		} else {
+			System.out.println(" \'results\' Table already exists! Dropping and re-creating it...");
+			admin.disableTable(Bytes.toBytes("results"));
+			admin.deleteTable(Bytes.toBytes("results"));
+			admin.createTable(anotherTableDescriptor);
+		}
 
 	}
 
