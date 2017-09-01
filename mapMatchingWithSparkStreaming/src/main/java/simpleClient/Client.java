@@ -10,6 +10,7 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.text.SimpleDateFormat;
 import java.util.Base64;
 
 import javax.swing.JOptionPane;
@@ -17,6 +18,12 @@ import javax.swing.JOptionPane;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import response.Trace;
+
+import com.google.gson.Gson;
+
+import java.util.Date;
 
 /**
  * 
@@ -70,7 +77,21 @@ public class Client {
         //System.out.println(receivedRowKey);
         String receivedValue = new String(Base64.getDecoder().decode(json.getJSONArray("Row").getJSONObject(0).getJSONArray("Cell").getJSONObject(0).get("$").toString()), StandardCharsets.UTF_8);
         System.out.println(receivedValue);
-        System.out.println(receivedRowKey.equals("x0001")?"Test Passed":"Test Failed");
+        
+        Gson gson = new Gson();
+        
+        System.out.println("Displaying timestamps...");
+        Trace trace = gson.fromJson(receivedValue, Trace.class);
+        trace.getCoordinates().forEach(c -> {
+        	SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ssX");
+        	try {
+				System.out.println(simpleDateFormat.format(new Date(c.getTimestamp())));
+			} catch (Exception e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+        });
+        
     }
 	
 	/**
@@ -164,6 +185,10 @@ public class Client {
         
         //Thread.sleep(30000);
         //sendGet("x0001", null);
+	}
+	
+	public static void main(String[] args) throws Exception {
+		sendGet("x0001", null);
 	}
 
 }

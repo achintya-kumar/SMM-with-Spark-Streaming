@@ -30,4 +30,5 @@ mapMatchingWithSparkStreaming/oberbayern.bfmap
 
 .classpath
 
-
+# Ignore all class files.
+library/barefoot/target/

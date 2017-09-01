@@ -27,6 +27,10 @@ public class Trace implements Serializable{
 	
 	public Trace() {}
 	
+	public void addCoordinates(Long timestamp, Double latitude, Double longitude) {
+		this.coordinates.add(new Coordinates(timestamp, latitude, longitude));
+	}
+	
 	public void addCoordinates(Double latitude, Double longitude) {
 		this.coordinates.add(new Coordinates(latitude, longitude));
 	}
@@ -51,8 +55,8 @@ public class Trace implements Serializable{
 		Trace trace = new Trace();
 		trace.setDeviceID("sup1123");
 		trace.addCoordinates(22.34343, 33.22323);
-		trace.addCoordinates(77.777777, 8.888888);
-		trace.addCoordinates(99.998899, 87.87878787);
+		trace.addCoordinates(new Long(2000), 77.777777, 8.888888);
+		trace.addCoordinates(new Long(3000), 99.998899, 87.87878787);
 		
 		Gson gson = new Gson();
 		System.out.println(gson.toJson(trace));

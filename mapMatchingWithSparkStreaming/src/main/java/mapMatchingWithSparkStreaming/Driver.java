@@ -70,6 +70,7 @@ public class Driver {
 		JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
 		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2);
 
+		lines.print();
 		// Creating a pair Dstream with the ID as the key
 		JavaPairDStream<String, String> linesInPairedFormWithID = lines.mapToPair(line -> {
 					JSONObject json = new JSONObject(line);
@@ -95,33 +96,28 @@ public class Driver {
 		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples
 				.mapValues(v -> {
 					System.out.println("id = " + v.get(0).id());
-					System.out.println("oldKstateJSON = "
-							+ broadcasted.getValue().getKstateJSONfromHBase(
-									v.get(0).id()));
-					String oldKstateJSON = broadcasted.getValue()
-							.getKstateJSONfromHBase(v.get(0).id());
+					System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id()));
+					String oldKstateJSON = broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id());
 					if (oldKstateJSON == null)
-						return broadcasted.getValue().getBarefootMatcher()
-								.mmatch(v, 1, 150);
+						return broadcasted.getValue().getBarefootMatcher().mmatch(v, 1, 150);
 					else {
 						MatcherKState state = new MatcherKState(new JSONObject(oldKstateJSON), new MatcherFactory(broadcasted.getValue().getRoadMap()));
-						System.out.println("reconstructedJSON = "
-								+ state.toJSON());
+						System.out.println("reconstructedJSON = " + state.toJSON());
 
-				// Unsorted samples (wrt time) leads to out-of-order RuntimeException.
-				Collections.sort(v, (a, b) -> {
-					Long aTime = new Long(a.time());
-					Long bTime = new Long(b.time());
-					return aTime.compareTo(bTime);
-				});
-				
-				// Updating the existing state retrieved from HBase
-				for (MatcherSample sample : v)
-					state.update(broadcasted.getValue().getBarefootMatcher().execute(state.vector(), state.sample(), sample), sample);
-
-				System.out.println("found state = " + state);
-				return state;
-			}
+						// Unsorted samples (wrt time) leads to out-of-order RuntimeException.
+						Collections.sort(v, (a, b) -> {
+							Long aTime = new Long(a.time());
+							Long bTime = new Long(b.time());
+							return aTime.compareTo(bTime);
+						});
+						
+						// Updating the existing state retrieved from HBase
+						for (MatcherSample sample : v)
+							state.update(broadcasted.getValue().getBarefootMatcher().execute(state.vector(), state.sample(), sample), sample);
+		
+						System.out.println("found state = " + state);
+						return state;
+					}
 		});
 		
 		
