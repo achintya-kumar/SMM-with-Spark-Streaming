@@ -121,15 +121,11 @@ public class Client {
 		System.out.println(response.toString());
 	}
 	
-	
-	public static void main(String[] args) throws Exception {
-		
+	public static void feedKafka() throws Exception {
 		//Delegating the job of streaming a sample every 3 seconds to a separate thread.
         Thread stream = new Thread(new Runnable() {
 			@Override
 			public void run() {
-				System.out.println("\n\n");
-				System.out.println("from thread!");
 				String completeJSON = new String();
 				BufferedReader bufferedReader; 
 				try {
@@ -143,9 +139,9 @@ public class Client {
 					bufferedReader.close();
 					JSONArray array = new JSONArray(completeJSON);
 					for(int i = 0; i < array.length(); i++) {
-						Thread.sleep(3000);
+						Thread.sleep(3000); // <-- Sends out a sample every 3 seconds
 						System.out.println(array.get(i));
-						sentPost(array.get(i).toString(), "http://10.0.2.15:8082/topics/gps");
+						sentPost(array.get(i).toString(), "http://localhost:8082/topics/gps"); // <-- Sending POST request to Kafka server
 					}
 				} catch (FileNotFoundException e) {
 					e.printStackTrace();
@@ -163,10 +159,11 @@ public class Client {
         int choice = JOptionPane.showConfirmDialog(new Frame(), "Are you sure you want to stream?", "Confirm Streaming...", JOptionPane.YES_NO_OPTION);
         if(choice == JOptionPane.YES_OPTION)
         	stream.start();
+        else
+        	System.exit(0);
         
-        
-        sendGet("x0001", null);
-
-    }
+        //Thread.sleep(30000);
+        //sendGet("x0001", null);
+	}
 
 }
