@@ -6,6 +6,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Date;
 import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingDeque;
@@ -36,44 +37,23 @@ import com.bmwcarit.barefoot.roadmap.RoadMap;
 
 public class Tracker {
 
-	private static String dataStoreAddress, trackerIP;
+	private static String dataStoreAddress;
 	private static RoadMap map;
-	private static int trackerPort;
 
 	/**
 	 * Fetches results from the HBase 'samples' table and publish JSON data via
 	 * ZMQ
 	 * 
-	 * @param rowKey
-	 *            ID of the device
-	 * @param dataStoreLink
-	 *            Link to the HBase master
-	 * @param trackerIP
-	 *            IP address where the monitor server is running
-	 * @param trackerPort
-	 *            tcp port to publish JSON data for monitor server
+	 * @param rowKey ID of the device
+	 * @param dataStoreLink Link to the HBase master
 	 * @throws Exception
 	 */
 
 	public static void publishToMonitorServer(String rowKey, String dataStoreLink) throws Exception {
 
-		dataStoreAddress = "httpString to port the Monitor Server subscribes to://192.168.0.102:20550";
-		trackerIP = "127.0.0.1";
-		trackerPort = 1235;
-
 		if (dataStoreLink != null)
 			dataStoreAddress = dataStoreLink;
 
-		String url = dataStoreAddress + "/samples/" + rowKey;
-
-		// HBase connection
-		URL obj = new URL(url);
-		HttpURLConnection con = (HttpURLConnection) obj.openConnection();
-
-		// Request header
-		con.setRequestProperty("Accept", "application/json");
-
-		// Properties to create a RoadMap instance
 		Properties oberbayern_properties = new Properties();
 		oberbayern_properties.put("database.host", "172.17.0.1");
 		oberbayern_properties.put("database.port", "5432");
@@ -84,46 +64,52 @@ public class Tracker {
 
 		map = Loader.roadmap(oberbayern_properties, true).construct();
 
-		// Queue to publish JSON data for Monitor Server
-		BlockingQueue<String> queue = new LinkedBlockingDeque<>();
-		Context context = ZMQ.context(1);
-		Socket socket = context.socket(ZMQ.PUB);
-		socket.bind("tcp://" + trackerIP + ":" + trackerPort);
+		while (true) {
+			// Publish Queue
+			BlockingQueue<String> queue = new LinkedBlockingDeque<>();
+			Context context = ZMQ.context(1);
+			Socket socket = context.socket(ZMQ.PUB);
+			socket.bind("tcp://*:" + 1235);
+			String id = "\u000001";
 
-		// Constructing the result from HBase table
-		BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
-		String inputLine;
-		StringBuffer response = new StringBuffer();
+			String url = "http://" + dataStoreAddress + ":20550/samples/" + rowKey;
 
-		while ((inputLine = in.readLine()) != null) {
-			response.append(inputLine);
+			URL obj = new URL(url);
+			HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+
+			// Request header
+			con.setRequestProperty("Accept", "application/json");
+
+			BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+			String inputLine;
+			StringBuffer response = new StringBuffer();
+
+			while ((inputLine = in.readLine()) != null)
+				response.append(inputLine);
+
+			in.close();
+
+			JSONObject json = new JSONObject(response.toString());
+			String receivedValue = new String(Base64.getDecoder().decode(json.getJSONArray("Row").getJSONObject(0).getJSONArray("Cell").getJSONObject(0).get("$").toString()), StandardCharsets.UTF_8);
+
+			MatcherKState state = new MatcherKState(new JSONObject(receivedValue), new MatcherFactory(map));
+
+			JSONObject monitorJson = state.toMonitorJSON();
+			monitorJson.put("id", id);
+			queue.put(monitorJson.toString());
+			String message = queue.take();
+			socket.send(message);
+
+			System.out.println("  Publishing at " + new Date(System.currentTimeMillis()));
+
+			socket.close();
+			context.term();
+			Thread.sleep(1500);
 		}
-		in.close();
-
-		// Converting Base64 binary data to String
-		JSONObject json = new JSONObject(response.toString());
-		String receivedValue = new String(Base64.getDecoder().decode(
-				json.getJSONArray("Row").getJSONObject(0).getJSONArray("Cell").getJSONObject(0).get("$").toString()),
-				StandardCharsets.UTF_8);
-
-		// Creating a MatcherKState object from received data
-		MatcherKState state = new MatcherKState(new JSONObject(receivedValue), new MatcherFactory(map));
-		JSONObject monitorJson;
-
-		// Publishing JSON data
-		monitorJson = state.toMonitorJSON();
-		monitorJson.put("id", rowKey);
-		queue.put(monitorJson.toString());
-		String message = queue.take();
-		socket.send(message);
-		socket.close();
-		context.term();
 	}
 
 	public static void main(String[] args) throws Exception {
-
-		publishToMonitorServer("x0001", null);
-
+		publishToMonitorServer("x0001", "localhost");
 	}
 
 }
