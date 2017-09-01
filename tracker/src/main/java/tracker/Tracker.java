@@ -39,6 +39,8 @@ public class Tracker {
 
 	private static String dataStoreAddress;
 	private static RoadMap map;
+	private static Context context;
+	private static Socket socket;
 
 	/**
 	 * Fetches results from the HBase 'samples' table and publish JSON data via
@@ -67,19 +69,29 @@ public class Tracker {
 		while (true) {
 			// Publish Queue
 			BlockingQueue<String> queue = new LinkedBlockingDeque<>();
-			Context context = ZMQ.context(1);
-			Socket socket = context.socket(ZMQ.PUB);
-			socket.bind("tcp://*:" + 1235);
+			
+			// One time initializations
+			if(context == null)
+				context = ZMQ.context(1);
+			
+			if(socket == null) {
+				socket = context.socket(ZMQ.PUB);
+				socket.bind("tcp://*:" + 1235);
+			}
+			
+			
 			String id = "\u000001";
 
 			String url = "http://" + dataStoreAddress + ":20550/samples/" + rowKey;
-
+			
+			// Opening connection
 			URL obj = new URL(url);
 			HttpURLConnection con = (HttpURLConnection) obj.openConnection();
 
-			// Request header
+			// Requesting header
 			con.setRequestProperty("Accept", "application/json");
-
+			
+			// Reading from the connection
 			BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
 			String inputLine;
 			StringBuffer response = new StringBuffer();
@@ -88,28 +100,34 @@ public class Tracker {
 				response.append(inputLine);
 
 			in.close();
-
+			
+			// Converting response into JSONObject and extracting the value from it and decoding it.
 			JSONObject json = new JSONObject(response.toString());
 			String receivedValue = new String(Base64.getDecoder().decode(json.getJSONArray("Row").getJSONObject(0).getJSONArray("Cell").getJSONObject(0).get("$").toString()), StandardCharsets.UTF_8);
 
+			// Reconstructing the kState object
 			MatcherKState state = new MatcherKState(new JSONObject(receivedValue), new MatcherFactory(map));
-
+			
+			// Converting kState object to JSON compatible with Monitor
 			JSONObject monitorJson = state.toMonitorJSON();
 			monitorJson.put("id", id);
-			queue.put(monitorJson.toString());
-			String message = queue.take();
+			queue.put(monitorJson.toString()); 
+			String message = queue.take(); 
 			socket.send(message);
 
 			System.out.println("  Publishing at " + new Date(System.currentTimeMillis()));
 
-			socket.close();
-			context.term();
 			Thread.sleep(1500);
 		}
 	}
 
 	public static void main(String[] args) throws Exception {
 		publishToMonitorServer("x0001", "localhost");
+		
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> { // <-- Letting the following termination operations being taken care of at shutdown.
+			socket.close();
+			context.term();
+		}));
 	}
 
 }
