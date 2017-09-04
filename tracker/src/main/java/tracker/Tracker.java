@@ -3,6 +3,7 @@ package tracker;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -46,8 +47,10 @@ public class Tracker {
 	 * Fetches results from the HBase 'samples' table and publish JSON data via
 	 * ZMQ
 	 * 
-	 * @param rowKey ID of the device
-	 * @param dataStoreLink Link to the HBase master
+	 * @param rowKey
+	 *            ID of the device
+	 * @param dataStoreLink
+	 *            Link to the HBase master
 	 * @throws Exception
 	 */
 
@@ -69,28 +72,27 @@ public class Tracker {
 		while (true) {
 			// Publish Queue
 			BlockingQueue<String> queue = new LinkedBlockingDeque<>();
-			
+
 			// One time initializations
-			if(context == null)
+			if (context == null)
 				context = ZMQ.context(1);
-			
-			if(socket == null) {
+
+			if (socket == null) {
 				socket = context.socket(ZMQ.PUB);
 				socket.bind("tcp://*:" + 1235);
 			}
-			
-			
-			String id = "\u000001";
+
+			// String id = "\u000001";
 
 			String url = "http://" + dataStoreAddress + ":20550/samples/" + rowKey;
-			
+
 			// Opening connection
 			URL obj = new URL(url);
 			HttpURLConnection con = (HttpURLConnection) obj.openConnection();
 
 			// Requesting header
 			con.setRequestProperty("Accept", "application/json");
-			
+
 			// Reading from the connection
 			BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
 			String inputLine;
@@ -100,19 +102,21 @@ public class Tracker {
 				response.append(inputLine);
 
 			in.close();
-			
-			// Converting response into JSONObject and extracting the value from it and decoding it.
+
+			// Converting response into JSONObject and extracting the value from
+			// it and decoding it.
 			JSONObject json = new JSONObject(response.toString());
-			String receivedValue = new String(Base64.getDecoder().decode(json.getJSONArray("Row").getJSONObject(0).getJSONArray("Cell").getJSONObject(0).get("$").toString()), StandardCharsets.UTF_8);
+			String receivedValue = new String(Base64.getDecoder().decode(json.getJSONArray("Row").getJSONObject(0)
+					.getJSONArray("Cell").getJSONObject(0).get("$").toString()), StandardCharsets.UTF_8);
 
 			// Reconstructing the kState object
 			MatcherKState state = new MatcherKState(new JSONObject(receivedValue), new MatcherFactory(map));
-			
+
 			// Converting kState object to JSON compatible with Monitor
 			JSONObject monitorJson = state.toMonitorJSON();
-			monitorJson.put("id", id);
-			queue.put(monitorJson.toString()); 
-			String message = queue.take(); 
+			monitorJson.put("id", rowKey);
+			queue.put(monitorJson.toString());
+			String message = queue.take();
 			socket.send(message);
 
 			System.out.println("  Publishing at " + new Date(System.currentTimeMillis()));
@@ -121,10 +125,47 @@ public class Tracker {
 		}
 	}
 
+	public static void getResults(String rowKey, String dataStoreLink) throws Exception {
+
+		if (dataStoreLink != null)
+			dataStoreAddress = dataStoreLink;
+
+		String url = "http://" + dataStoreAddress + ":20550/results/" + rowKey;
+
+		// Opening connection
+		URL obj = new URL(url);
+		HttpURLConnection con = (HttpURLConnection) obj.openConnection();
+
+		// Requesting header
+		con.setRequestProperty("Accept", "application/json");
+
+		// Reading from the connection
+		BufferedReader in = new BufferedReader(new InputStreamReader(con.getInputStream()));
+		String inputLine;
+		StringBuffer response = new StringBuffer();
+
+		while ((inputLine = in.readLine()) != null)
+			response.append(inputLine);
+
+		in.close();
+
+		// Converting response into JSONObject and extracting the value from it and decoding it.
+		JSONObject json = new JSONObject(response.toString());
+		String receivedValue = new String(Base64.getDecoder().decode(json.getJSONArray("Row").getJSONObject(0)
+				.getJSONArray("Cell").getJSONObject(0).get("$").toString()),
+				StandardCharsets.UTF_8);
+		System.out.println("Results table value : " + receivedValue);
+
+	}
+
 	public static void main(String[] args) throws Exception {
+		
 		publishToMonitorServer("x0001", "localhost");
 		
-		Runtime.getRuntime().addShutdownHook(new Thread(() -> { // <-- Letting the following termination operations being taken care of at shutdown.
+		getResults("x0001", "localhost");
+
+		Runtime.getRuntime().addShutdownHook(new Thread(() -> { 
+			// <-- Letting the following termination operations being taken care of at shutdown
 			socket.close();
 			context.term();
 		}));
