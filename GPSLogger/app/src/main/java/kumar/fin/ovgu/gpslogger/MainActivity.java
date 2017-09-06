@@ -16,8 +16,11 @@ import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.tasks.OnSuccessListener;
 
+import java.util.Date;
+
 public class MainActivity extends AppCompatActivity {
     private FusedLocationProviderClient mFusedLocationClient;
+    final Handler ha=new Handler();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,7 +42,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         // The handler below runs every 3 seconds to update the last known coordinates...
-        final Handler ha=new Handler();
         ha.postDelayed(new Runnable() {
 
             @Override
@@ -53,6 +55,11 @@ public class MainActivity extends AppCompatActivity {
 
     }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+    }
+
     private void setCoordinates() {
         final TextView t=(TextView)findViewById(R.id.box);
         t.setText("Calculating...");
@@ -63,14 +70,20 @@ public class MainActivity extends AppCompatActivity {
                     // Got last known location. In some rare situations this can be null.
                     if (location != null) {
                         // ...
-                        Toast.makeText(MainActivity.this, "Coordinates = " + location.getLatitude() + ", " + location.getLongitude(), Toast.LENGTH_LONG).show();
+                        //Toast.makeText(MainActivity.this, "Coordinates = " + location.getLatitude() + ", " + location.getLongitude(), Toast.LENGTH_LONG).show();
                         Log.d("MyApp","Coordinates = " + location.getLatitude() + ", " + location.getLongitude());
-                        t.setText("Coordinates = " + location.getLatitude() + ", " + location.getLongitude() + "\n" + location.getProvider());
+                        t.setText("Coordinates = " + location.getLatitude() + ", " + location.getLongitude()
+                                + "\nLast Updated at: " + new Date(System.currentTimeMillis())
+                                + "\nLocation Provider: " + location.getProvider());
                     }
                 }
             });
         } catch (SecurityException e) {
             e.printStackTrace();
         }
+    }
+
+    private void showToast(String message, int length_of_time) {
+        Toast.makeText(MainActivity.this, message, length_of_time).show();
     }
 }
