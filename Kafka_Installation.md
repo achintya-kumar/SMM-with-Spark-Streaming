@@ -63,7 +63,7 @@ Now we are ready to use the services and tools provided by Confluent.
 #### 4. Configuration
 Before using starting to use Apache Kafka we need to configure the following services.
 ###### 4.1. Zookeeper
-  - Go to the directory **_/etc/zookeeper/conf_** and change the variable _clientPort_ to run the zookeeper server on the client node.
+  - Go to the directory **_/etc/zookeeper/conf_** and change the variable _clientPort_ in zoo.cfg configuration file to run the zookeeper server on the client node.
 
   **_server.x = hostname:port1:port2_**
   where  
