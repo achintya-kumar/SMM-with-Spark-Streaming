@@ -1,14 +1,23 @@
 package mapMatchingWithSparkStreaming;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.Serializable;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Properties;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.client.Connection;
@@ -18,6 +27,7 @@ import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.Table;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
@@ -28,7 +38,6 @@ import com.bmwcarit.barefoot.matcher.MatcherCandidate;
 import com.bmwcarit.barefoot.matcher.MatcherKState;
 import com.bmwcarit.barefoot.matcher.MatcherSample;
 import com.bmwcarit.barefoot.road.BfmapReader;
-import com.bmwcarit.barefoot.roadmap.Loader;
 import com.bmwcarit.barefoot.roadmap.Road;
 import com.bmwcarit.barefoot.roadmap.RoadMap;
 import com.bmwcarit.barefoot.roadmap.RoadPoint;
@@ -37,25 +46,6 @@ import com.bmwcarit.barefoot.spatial.Geography;
 import com.bmwcarit.barefoot.topology.Dijkstra;
 import com.bmwcarit.barefoot.util.SourceException;
 import com.google.gson.Gson;
-
-
-
-
-
-
-
-
-
-import java.io.*;
-import java.util.*;
-import java.net.*;
-import java.nio.file.Files;
-
-import org.apache.hadoop.fs.*;
-import org.apache.hadoop.conf.*;
-import org.apache.hadoop.io.*;
-import org.apache.hadoop.mapred.*;
-import org.apache.hadoop.util.*;
 
 
 /**
@@ -235,7 +225,7 @@ public class BroadcastedUtilities implements Serializable {
 		return json;
 	}
 	
-	public static void main(String[] args) throws JSONException, SourceException, IOException, URISyntaxException {
+	public static void main(String[] args) throws JSONException, SourceException, IOException, URISyntaxException, InterruptedException {
 //		System.gc();
 //		System.out.println("starting...");
 //		Properties oberbayern_properties = new Properties();
@@ -286,6 +276,40 @@ public class BroadcastedUtilities implements Serializable {
 //		
 //		System.out.println(state.toJSON());
 		
+		//run();
+		
+	}
+	
+	public static void run() throws IOException, InterruptedException, JSONException {
+		String completeJSON = new String();
+		BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(new FileInputStream("/home/cloudera/barefoot/src/test/resources/com/bmwcarit/barefoot/matcher/x0001-001.json")));
+			if(bufferedReader != null) {
+				String line;
+				while((line = bufferedReader.readLine()) != null) {
+					completeJSON += (line);
+				}
+			}
+			bufferedReader.close();
+			JSONArray array = new JSONArray(completeJSON);
+			for(int fileNumber=1; fileNumber<=1000; fileNumber++) {
+				StringBuffer dump = new StringBuffer();
+				dump.append('[');
+				for(int i = 0; i < array.length(); i++) {
+					//Thread.sleep(3000); // <-- Sends out a sample every 3 seconds
+					//System.out.println(array.get(i));
+					array.getJSONObject(i).put("id", "Device" + fileNumber);
+					//System.out.println(array.get(i));
+					dump.append(array.get(i).toString());
+					if(i!=array.length()-1)
+						dump.append(",");
+				}
+				dump.append(']');
+				//TODO: Dump to file
+				Files.write(Paths.get("/home/cloudera/barefoot/src/test/resources/com/bmwcarit/barefoot/matcher/samples/sample" + fileNumber + ".json"), dump.toString().getBytes());
+				System.gc();
+			}
+		
+			
 	}
 	
 	public List<Long> retrieveTimestamps(MatcherKState state) {
@@ -297,8 +321,8 @@ public class BroadcastedUtilities implements Serializable {
 	
 	public static File readBfMapFileFromHDFS() throws IOException, URISyntaxException {
 		Configuration configuratione = new Configuration();
-        FileSystem fs = FileSystem.get(new URI("hdfs://quickstart.cloudera:8020"), configuratione);
-        Path sourcePath = new Path("/user/cloudera/maps/oberbayern.bfmap"); // <-- I have copied the .bfmap file to this location inside HDFS
+        FileSystem fs = FileSystem.get(new URI("hdfs://node1:8020"), configuratione);
+        Path sourcePath = new Path("/user/oberbayern.bfmap"); // <-- I have copied the .bfmap file to this location inside HDFS
         Path targetPath = new Path("."); // <-- We shall copy the .bfmap file above to the root of the working directory.
         
         // Copying from HDFS to local disk
