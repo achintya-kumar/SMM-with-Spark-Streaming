@@ -47,9 +47,9 @@ public class Driver {
 	public static void main(String[] args) throws Exception {
 		
 		// Initializing SparkConf with 4 threads and StreamingContext with a batch interval of 20 seconds
-		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[4]");
+		SparkConf conf = new SparkConf().setAppName("spark_kafka")/*.setMaster("local[*]")*/;
 		JavaSparkContext sc = new JavaSparkContext(conf);
-		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(20000));
+		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(2000));
 
 		// Create table if it doesn't exist
 		Configuration hBaseConfiguration = HBaseConfiguration.create();
@@ -59,11 +59,13 @@ public class Driver {
 		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities());
 		
 		// Feeding Kafka with samples
-		simpleClient.Client.feedKafka();
+		//simpleClient.Client.feedKafka();
 
 		// Kafka streaming
 		Map<String, String> kafkaParams = new HashMap<String, String>();
-		kafkaParams.put("bootstrap.servers", "localhost:9092");
+		kafkaParams.put("bootstrap.servers", "52.166.253.3:9092");
+		kafkaParams.put("group.id", "map_group");
+		kafkaParams.put("enable.auto.commit", "true");
 		Set<String> topic = Collections.singleton("gps");
 
 		// Getting streams from Kafka
