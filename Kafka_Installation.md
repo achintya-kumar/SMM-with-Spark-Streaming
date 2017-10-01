@@ -160,7 +160,7 @@ topic -> set object which contains the list of topics_
 #### 9. Providing input JSON data for Kafka Server
 We can provide JSON data to Kafka Server using the below curl command in the terminal.
 ```
-$ curl -X POST -H "Content-Type: application/vnd.kafka.v1+json" --data '{"records":[{"value":{"foo":"bar"}}]}' "http://hostname:8082/topics/topicname"}'
+$ curl -X POST -H "Content-Type: application/vnd.kafka.v1+json" --data '{"records":[{"value":{"foo":"bar"}}]}' "http://hostname:8082/topics/topicname"
 ```
 where   
 Content-Type -> Specifies that its JSON data sent to Kafka Server
