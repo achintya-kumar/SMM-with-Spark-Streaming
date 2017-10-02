@@ -322,7 +322,7 @@ public class BroadcastedUtilities implements Serializable {
 	public static File readBfMapFileFromHDFS() throws IOException, URISyntaxException {
 		Configuration configuratione = new Configuration();
         FileSystem fs = FileSystem.get(new URI("hdfs://node1:8020"), configuratione);
-        Path sourcePath = new Path("/user/oberbayern.bfmap"); // <-- I have copied the .bfmap file to this location inside HDFS
+        Path sourcePath = new Path("/user/cloudera/oberbayern.bfmap"); // <-- I have copied the .bfmap file to this location inside HDFS
         Path targetPath = new Path("."); // <-- We shall copy the .bfmap file above to the root of the working directory.
         
         // Copying from HDFS to local disk
