@@ -47,7 +47,7 @@ public class Driver {
 	public static void main(String[] args) throws Exception {
 		
 		// Initializing SparkConf with 4 threads and StreamingContext with a batch interval of 20 seconds
-		SparkConf conf = new SparkConf().setAppName("spark_kafka")/*.setMaster("local[*]")*/;
+		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[*]");
 		JavaSparkContext sc = new JavaSparkContext(conf);
 		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(2000));
 
@@ -123,7 +123,7 @@ public class Driver {
 		});
 		
 		
-
+		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(v -> v.toJSON().toString()).print();
 		/*linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState
 				.mapValues(
 						x -> "Result = "
@@ -143,12 +143,12 @@ public class Driver {
 					});
 				});*/
 		
-		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.foreachRDD(rdd -> {
+		/*linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.foreachRDD(rdd -> {
 			rdd.foreach(value -> {
 				println(value._1 + ", " + value._2.toJSON().toString());
 				broadcasted.getValue().saveKstateJSONtoHBase(new String(value._1), value._2);
 			});
-		});
+		});*/
 
 		ssc.start();
 		ssc.awaitTermination();
