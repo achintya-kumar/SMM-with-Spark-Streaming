@@ -62,15 +62,16 @@ public class Driver {
 		//simpleClient.Client.feedKafka();
 
 		// Kafka streaming
-		Map<String, String> kafkaParams = new HashMap<String, String>();
+		/*Map<String, String> kafkaParams = new HashMap<String, String>();
 		kafkaParams.put("bootstrap.servers", "52.166.253.3:9092");
 		kafkaParams.put("group.id", "map_group");
 		kafkaParams.put("enable.auto.commit", "true");
-		Set<String> topic = Collections.singleton("gps");
+		Set<String> topic = Collections.singleton("gps");*/
 
 		// Getting streams from Kafka
-		JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
-		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2);
+		//JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
+		JavaReceiverInputDStream<String> lines = ssc.socketTextStream("node1", 9999, StorageLevels.MEMORY_AND_DISK_SER);
+		//JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2);
 
 		lines.print();
 		// Creating a pair Dstream with the ID as the key
