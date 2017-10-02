@@ -144,12 +144,12 @@ public class Driver {
 					});
 				});*/
 		
-		/*linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.foreachRDD(rdd -> {
+		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.foreachRDD(rdd -> {
 			rdd.foreach(value -> {
 				println(value._1 + ", " + value._2.toJSON().toString());
 				broadcasted.getValue().saveKstateJSONtoHBase(new String(value._1), value._2);
 			});
-		});*/
+		});
 
 		ssc.start();
 		ssc.awaitTermination();
