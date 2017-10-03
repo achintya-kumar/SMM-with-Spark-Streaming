@@ -26,6 +26,7 @@ import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.broadcast.Broadcast;
+import org.apache.spark.storage.StorageLevel;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaDStream;
 import org.apache.spark.streaming.api.java.JavaPairDStream;
@@ -34,11 +35,14 @@ import org.apache.spark.streaming.api.java.JavaStreamingContext;
 import org.apache.spark.streaming.kafka.KafkaUtils;
 import org.json.JSONObject;
 
+import response.Trace;
 import scala.Tuple2;
 
+import com.bmwcarit.barefoot.matcher.MatcherCandidate;
 import com.bmwcarit.barefoot.matcher.MatcherFactory;
 import com.bmwcarit.barefoot.matcher.MatcherKState;
 import com.bmwcarit.barefoot.matcher.MatcherSample;
+import com.google.gson.Gson;
 
 /**
  * 
@@ -67,7 +71,6 @@ public class Driver {
 		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities());
 		
 		// Feeding Kafka with samples
-		System.out.println("FEEDING KAFKA IS ENABLED!");
 		simpleClient.Client.feedKafka();
 
 		// Kafka streaming
@@ -82,27 +85,27 @@ public class Driver {
 		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2)/*ssc.socketTextStream("192.168.0.102", 1111) KEPT FOR TESTING PURPOSES!*/;
 
 		// Creating a pair Dstream with the ID as the key
-		JavaPairDStream<String, String> keySamplePair = lines.mapToPair(line -> {
+		JavaPairDStream<String, String> linesInPairedFormWithID = lines.mapToPair(line -> {
 					JSONObject json = new JSONObject(line);
 					String deviceID = (String) json.get("id");
 					return new Tuple2<>(deviceID, line);
 				});
 
 		// Grouping the Dstreams by the key
-		JavaPairDStream<String, List<String>> keySamplePairInListForm = keySamplePair.mapValues(v -> {
+		JavaPairDStream<String, List<String>> linesInPairedFormWithIDinListForm = linesInPairedFormWithID.mapValues(v -> {
 			List<String> inListForm = new ArrayList<>();
 			inListForm.add(v);
 			return inListForm;
 		});
 
-		JavaPairDStream<String, List<String>> keySamplePairInListFormReducedByKey = keySamplePairInListForm.reduceByKey((a, b) -> { // <-- Replaced groupByKey with reduceByKey, because LESS SHUFFLING!
+		JavaPairDStream<String, List<String>> linesInPairedFormWithIDAndGroupedByID = linesInPairedFormWithIDinListForm.reduceByKey((a, b) -> { // <-- Replaced groupByKey with reduceByKey, because LESS SHUFFLING!
 			a.addAll(b);
 			return a;
 		});
 		
-		//linesInPairedFormWithIDAndGroupedByID.print();
+//		linesInPairedFormWithIDAndGroupedByID.print();
 	
-		JavaPairDStream<String, List<MatcherSample>> keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamples = keySamplePairInListFormReducedByKey.mapValues(v -> {
+		JavaPairDStream<String, List<MatcherSample>> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples = linesInPairedFormWithIDAndGroupedByID.mapValues(v -> {
 					Iterator<String> iterator = v.iterator();
 					List<MatcherSample> listOfSamples = new ArrayList<>();
 					while (iterator.hasNext()) {
@@ -111,7 +114,7 @@ public class Driver {
 					return listOfSamples;
 		});
 		
-		JavaPairDStream<String, List<MatcherSample>> keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamplesSorted = keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamples.mapValues(v -> {
+		JavaPairDStream<String, List<MatcherSample>> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamplesSorted = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples.mapValues(v -> {
 			Collections.sort(v, (a, b) -> {
 				Long aTime = new Long(a.time());
 				Long bTime = new Long(b.time());
@@ -120,8 +123,23 @@ public class Driver {
 			
 			return v;
 		});
+		
+		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamplesSorted.mapValues(v -> {
+			StringBuffer values = new StringBuffer();
+			v.forEach(v1 -> {
+				try {
+					values.append(v1.toJSON().toString()).append("\n");
+				} catch (Exception e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			});
+			return values;
+		}).print();
+		
 
-		JavaPairDStream<String, MatcherKState> keySamplePairInListFormReducedByKeyAndValueMappedToMatcherKState = keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamplesSorted.mapValues(v -> {
+		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndReducedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamplesSorted
+				.mapValues(v -> {
 					System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id()));
 					String oldKstateJSON = broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id());
 					if (oldKstateJSON == null)
@@ -145,9 +163,38 @@ public class Driver {
 //		});
 		
 		
-		JavaDStream<String> javaDstream = keySamplePairInListFormReducedByKeyAndValueMappedToMatcherKState.map(v -> v._1 + "&" + v._2.toJSON().toString());
+		// *** The transformation below must be persisted in order to avoid recomputation *** The above transformation cannot be persisted as it is non-serializable
+		JavaDStream<String> javaDstreamForKState = linesInPairedFormWithIDAndReducedByIDAndValueMappedToMatcherKState.map(v -> v._1 + "&" + v._2.toJSON().toString()).persist(StorageLevel.MEMORY_AND_DISK());
 		
-		hbaseContext.streamBulkPut(javaDstream, TableName.valueOf("samples"), new PutFunction());
+		JavaDStream<String> javaDstreamForPathTrace = javaDstreamForKState.map(v -> {
+			
+			String[] values = v.split("&");
+			// Removing funny characters(e.g. \) from the key
+			String key = values[0].replace("\\", "").trim();
+			
+			// Initializing a new path trace object
+			Trace trace = new Trace();
+			trace.setDeviceID(key);
+			
+			List<Long> timestamps = new ArrayList<>();
+			MatcherKState kState = new MatcherKState(new JSONObject(values[1]), new MatcherFactory(broadcasted.getValue().getRoadMap()));
+			
+			kState.samples().forEach(s -> timestamps.add(s.time())); // <-- Extracting timestamps from kState, to place inside the pathTrace
+			
+			Iterator<Long> iterator = timestamps.iterator(); // <-- To iterate over the timestamps extracted above!
+			
+			for(MatcherCandidate cand : kState.sequence()) {
+				trace.addCoordinates(iterator.next(), cand.point().geometry().getY(), cand.point().geometry().getX());
+			}
+			
+			//Gson to json-ize the trace for storage
+			Gson gson = new Gson();
+			
+			return key + "&" + gson.toJson(trace);
+			
+		});
+		hbaseContext.streamBulkPut(javaDstreamForKState, TableName.valueOf("samples"), new PutFunctionForKState());
+		hbaseContext.streamBulkPut(javaDstreamForPathTrace, TableName.valueOf("results"), new PutFunctionForPathTrace());
 		
 		ssc.start();
 		ssc.awaitTermination();
@@ -210,7 +257,7 @@ public class Driver {
 	}
 
 	
-	public static class PutFunction implements Function<String, Put> {
+	public static class PutFunctionForKState implements Function<String, Put> {
 
 	    private static final long serialVersionUID = 1L;
 
@@ -225,4 +272,18 @@ public class Driver {
 
 	  }
 
+	public static class PutFunctionForPathTrace implements Function<String, Put> {
+
+	    private static final long serialVersionUID = 1L;
+
+	    public Put call(String v) throws Exception {
+	      String[] part = v.split("&"); 					// <-- Breaking into rowKey and the JSON value
+	      String rowKey = part[0].replace("\\", "").trim(); // <-- Chiseling rough edges!
+	      String value = part[1];
+	      Put p = new Put(Bytes.toBytes(rowKey));
+	      p.addColumn(Bytes.toBytes("pathTrace"), Bytes.toBytes("json"), Bytes.toBytes(value));
+	      return p;
+	    }
+
+	  }
 }
