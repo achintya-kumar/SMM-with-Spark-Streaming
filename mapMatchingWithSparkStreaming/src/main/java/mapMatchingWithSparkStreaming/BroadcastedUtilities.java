@@ -115,6 +115,8 @@ public class BroadcastedUtilities implements Serializable {
 				return hBaseConfiguration;
 			} else {
 				hBaseConfiguration = HBaseConfiguration.create();
+				hBaseConfiguration.addResource("/etc/hbase/conf/core-site.xml");
+				hBaseConfiguration.addResource("/etc/hbase/conf/hbase-site.xml");
 				return hBaseConfiguration;
 			}
 		}
@@ -321,7 +323,7 @@ public class BroadcastedUtilities implements Serializable {
 	
 	public static File readBfMapFileFromHDFS() throws IOException, URISyntaxException {
 		Configuration configuratione = new Configuration();
-        FileSystem fs = FileSystem.get(new URI("hdfs://node1:8020"), configuratione);
+        FileSystem fs = FileSystem.get(new URI("hdfs://192.168.0.102:8020"), configuratione);
         Path sourcePath = new Path("/user/cloudera/oberbayern.bfmap"); // <-- I have copied the .bfmap file to this location inside HDFS
         Path targetPath = new Path("."); // <-- We shall copy the .bfmap file above to the root of the working directory.
         
