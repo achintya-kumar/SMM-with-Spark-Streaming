@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.logging.LogManager;
 
 import kafka.serializer.StringDecoder;
 
@@ -22,6 +23,8 @@ import org.apache.hadoop.hbase.client.HBaseAdmin;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.spark.JavaHBaseContext;
 import org.apache.hadoop.hbase.util.Bytes;
+import org.apache.log4j.Level;
+import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
@@ -53,7 +56,8 @@ import com.google.gson.Gson;
 public class Driver {
 
 	public static void main(String[] args) throws Exception {
-		
+		Logger log = org.apache.log4j.LogManager.getRootLogger();
+		log.setLevel(Level.WARN);
 		// Initializing SparkConf with 4 threads and StreamingContext with a batch interval of 20 seconds
 		System.out.println("Local execution is DEACTIVATED!");
 		SparkConf conf = new SparkConf().setAppName("spark_kafka")/*.setMaster("local[*]")*/;
@@ -66,7 +70,7 @@ public class Driver {
 		hBaseConfiguration.addResource("/etc/hbase/conf/hbase-site.xml");
 		initializeHBaseTable(hBaseConfiguration);
 
-	    JavaHBaseContext hbaseContext = new JavaHBaseContext(sc, hBaseConfiguration);
+		JavaHBaseContext hbaseContext = new JavaHBaseContext(sc, hBaseConfiguration);
 		// Broadcasting some utilities
 		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities());
 		
@@ -75,36 +79,38 @@ public class Driver {
 
 		// Kafka streaming
 		Map<String, String> kafkaParams = new HashMap<String, String>();
-		kafkaParams.put("bootstrap.servers", "quickstart.cloudera:9092");
+		kafkaParams.put("bootstrap.servers", "localhost:9092");
 		kafkaParams.put("group.id", "map_group");
 		kafkaParams.put("enable.auto.commit", "true");
 		Set<String> topic = Collections.singleton("gps");
 
 		// Getting streams from Kafka
 		JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
-		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2)/*ssc.socketTextStream("192.168.0.102", 1111) KEPT FOR TESTING PURPOSES!*/;
-
+		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2)/*ssc.socketTextStream("localhost", 1111) /*KEPT FOR TESTING PURPOSES!*/;
+		lines.print();
 		// Creating a pair Dstream with the ID as the key
 		JavaPairDStream<String, String> linesInPairedFormWithID = lines.mapToPair(line -> {
 					JSONObject json = new JSONObject(line);
 					String deviceID = (String) json.get("id");
 					return new Tuple2<>(deviceID, line);
 				});
-
-		// Grouping the Dstreams by the key
+		linesInPairedFormWithID.print();
+		
+//
+//		// Grouping the Dstreams by the key
 		JavaPairDStream<String, List<String>> linesInPairedFormWithIDinListForm = linesInPairedFormWithID.mapValues(v -> {
 			List<String> inListForm = new ArrayList<>();
 			inListForm.add(v);
 			return inListForm;
 		});
-
+//
 		JavaPairDStream<String, List<String>> linesInPairedFormWithIDAndGroupedByID = linesInPairedFormWithIDinListForm.reduceByKey((a, b) -> { // <-- Replaced groupByKey with reduceByKey, because LESS SHUFFLING!
 			a.addAll(b);
 			return a;
 		});
-		
-//		linesInPairedFormWithIDAndGroupedByID.print();
-	
+//		
+////		linesInPairedFormWithIDAndGroupedByID.print();
+//	
 		JavaPairDStream<String, List<MatcherSample>> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples = linesInPairedFormWithIDAndGroupedByID.mapValues(v -> {
 					Iterator<String> iterator = v.iterator();
 					List<MatcherSample> listOfSamples = new ArrayList<>();
@@ -113,7 +119,7 @@ public class Driver {
 					}
 					return listOfSamples;
 		});
-		
+//		
 		JavaPairDStream<String, List<MatcherSample>> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamplesSorted = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples.mapValues(v -> {
 			Collections.sort(v, (a, b) -> {
 				Long aTime = new Long(a.time());
@@ -123,7 +129,7 @@ public class Driver {
 			
 			return v;
 		});
-		
+//		
 		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamplesSorted.mapValues(v -> {
 			StringBuffer values = new StringBuffer();
 			v.forEach(v1 -> {
@@ -136,11 +142,13 @@ public class Driver {
 			});
 			return values;
 		}).print();
+//		
+//
+		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamplesSorted.mapValues(v -> "oldKstateJSON = " + broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id())).print();
 		
-
+		
 		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndReducedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamplesSorted
 				.mapValues(v -> {
-					System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id()));
 					String oldKstateJSON = broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id());
 					if (oldKstateJSON == null)
 						return broadcasted.getValue().getBarefootMatcher().mmatch(v, 1, 150);
@@ -161,9 +169,9 @@ public class Driver {
 //				broadcasted.getValue().saveKstateJSONtoHBase(new String(value._1), value._2);
 //			});
 //		});
-		
-		
-		// *** The transformation below must be persisted in order to avoid recomputation *** The above transformation cannot be persisted as it is non-serializable
+//		
+//		
+//		// *** The transformation below must be persisted in order to avoid recomputation *** The above transformation cannot be persisted as it is non-serializable
 		JavaDStream<String> javaDstreamForKState = linesInPairedFormWithIDAndReducedByIDAndValueMappedToMatcherKState.map(v -> v._1 + "&" + v._2.toJSON().toString()).persist(StorageLevel.MEMORY_AND_DISK());
 		
 		JavaDStream<String> javaDstreamForPathTrace = javaDstreamForKState.map(v -> {
