@@ -177,10 +177,10 @@ public class Client {
 			}
 		});
         
-        int choice = JOptionPane.showConfirmDialog(new Frame(), "Are you sure you want to stream?", "Confirm Streaming...", JOptionPane.YES_NO_OPTION);
-        if(choice == JOptionPane.YES_OPTION)
+        //int choice = JOptionPane.showConfirmDialog(new Frame(), "Are you sure you want to stream?", "Confirm Streaming...", JOptionPane.YES_NO_OPTION);
+        //if(choice == JOptionPane.YES_OPTION)
         	stream.start();
-        else
+        //else
         	System.exit(0);
         
         //Thread.sleep(30000);
