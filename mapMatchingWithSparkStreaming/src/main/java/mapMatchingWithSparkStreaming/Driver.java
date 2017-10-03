@@ -16,11 +16,15 @@ import org.apache.hadoop.hbase.HBaseConfiguration;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.MasterNotRunningException;
+import org.apache.hadoop.hbase.TableName;
 import org.apache.hadoop.hbase.ZooKeeperConnectionException;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
+import org.apache.hadoop.hbase.client.Put;
+import org.apache.hadoop.hbase.spark.JavaHBaseContext;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.spark.SparkConf;
 import org.apache.spark.api.java.JavaSparkContext;
+import org.apache.spark.api.java.function.Function;
 import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.streaming.Durations;
 import org.apache.spark.streaming.api.java.JavaDStream;
@@ -47,112 +51,107 @@ public class Driver {
 	public static void main(String[] args) throws Exception {
 		
 		// Initializing SparkConf with 4 threads and StreamingContext with a batch interval of 20 seconds
-		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[*]");
+		System.out.println("Local execution is DEACTIVATED!");
+		SparkConf conf = new SparkConf().setAppName("spark_kafka")/*.setMaster("local[*]")*/;
 		JavaSparkContext sc = new JavaSparkContext(conf);
-		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(2000));
+		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(12000));
 
 		// Create table if it doesn't exist
 		Configuration hBaseConfiguration = HBaseConfiguration.create();
+		hBaseConfiguration.addResource("/etc/hbase/conf/core-site.xml");
+		hBaseConfiguration.addResource("/etc/hbase/conf/hbase-site.xml");
 		initializeHBaseTable(hBaseConfiguration);
 
+	    JavaHBaseContext hbaseContext = new JavaHBaseContext(sc, hBaseConfiguration);
 		// Broadcasting some utilities
 		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities());
 		
 		// Feeding Kafka with samples
-		//simpleClient.Client.feedKafka();
+		System.out.println("FEEDING KAFKA IS ENABLED!");
+		simpleClient.Client.feedKafka();
 
 		// Kafka streaming
-		/*Map<String, String> kafkaParams = new HashMap<String, String>();
-		kafkaParams.put("bootstrap.servers", "52.166.253.3:9092");
+		Map<String, String> kafkaParams = new HashMap<String, String>();
+		kafkaParams.put("bootstrap.servers", "quickstart.cloudera:9092");
 		kafkaParams.put("group.id", "map_group");
 		kafkaParams.put("enable.auto.commit", "true");
-		Set<String> topic = Collections.singleton("gps");*/
+		Set<String> topic = Collections.singleton("gps");
 
 		// Getting streams from Kafka
-		//JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
-		JavaReceiverInputDStream<String> lines = ssc.socketTextStream("node1", 9999, StorageLevels.MEMORY_AND_DISK_SER);
-		//JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2);
+		JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
+		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2)/*ssc.socketTextStream("192.168.0.102", 1111) KEPT FOR TESTING PURPOSES!*/;
 
-		lines.print();
 		// Creating a pair Dstream with the ID as the key
-		JavaPairDStream<String, String> linesInPairedFormWithID = lines.mapToPair(line -> {
+		JavaPairDStream<String, String> keySamplePair = lines.mapToPair(line -> {
 					JSONObject json = new JSONObject(line);
 					String deviceID = (String) json.get("id");
 					return new Tuple2<>(deviceID, line);
 				});
 
 		// Grouping the Dstreams by the key
-		JavaPairDStream<String, Iterable<String>> linesInPairedFormWithIDAndGroupedByID = linesInPairedFormWithID.groupByKey();
-		linesInPairedFormWithIDAndGroupedByID.print();
+		JavaPairDStream<String, List<String>> keySamplePairInListForm = keySamplePair.mapValues(v -> {
+			List<String> inListForm = new ArrayList<>();
+			inListForm.add(v);
+			return inListForm;
+		});
 
-		//
-		JavaPairDStream<String, List<MatcherSample>> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples = linesInPairedFormWithIDAndGroupedByID.mapValues(v -> {
+		JavaPairDStream<String, List<String>> keySamplePairInListFormReducedByKey = keySamplePairInListForm.reduceByKey((a, b) -> { // <-- Replaced groupByKey with reduceByKey, because LESS SHUFFLING!
+			a.addAll(b);
+			return a;
+		});
+		
+		//linesInPairedFormWithIDAndGroupedByID.print();
+	
+		JavaPairDStream<String, List<MatcherSample>> keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamples = keySamplePairInListFormReducedByKey.mapValues(v -> {
 					Iterator<String> iterator = v.iterator();
 					List<MatcherSample> listOfSamples = new ArrayList<>();
 					while (iterator.hasNext()) {
-						listOfSamples.add(new MatcherSample(new JSONObject(
-								iterator.next())));
+						listOfSamples.add(new MatcherSample(new JSONObject(iterator.next())));
 					}
 					return listOfSamples;
-				});
+		});
 		
-		JavaPairDStream<String, MatcherKState> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherSamples
-				.mapValues(v -> {
-					System.out.println("id = " + v.get(0).id());
+		JavaPairDStream<String, List<MatcherSample>> keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamplesSorted = keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamples.mapValues(v -> {
+			Collections.sort(v, (a, b) -> {
+				Long aTime = new Long(a.time());
+				Long bTime = new Long(b.time());
+				return aTime.compareTo(bTime);
+			});
+			
+			return v;
+		});
+
+		JavaPairDStream<String, MatcherKState> keySamplePairInListFormReducedByKeyAndValueMappedToMatcherKState = keySamplePairInListFormReducedByKeyAndValueMappedToMatcherSamplesSorted.mapValues(v -> {
 					System.out.println("oldKstateJSON = " + broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id()));
 					String oldKstateJSON = broadcasted.getValue().getKstateJSONfromHBase(v.get(0).id());
 					if (oldKstateJSON == null)
 						return broadcasted.getValue().getBarefootMatcher().mmatch(v, 1, 150);
 					else {
 						MatcherKState state = new MatcherKState(new JSONObject(oldKstateJSON), new MatcherFactory(broadcasted.getValue().getRoadMap()));
-						System.out.println("reconstructedJSON = " + state.toJSON());
-
-						// Unsorted samples (wrt time) leads to out-of-order RuntimeException.
-						Collections.sort(v, (a, b) -> {
-							Long aTime = new Long(a.time());
-							Long bTime = new Long(b.time());
-							return aTime.compareTo(bTime);
-						});
-						
 						// Updating the existing state retrieved from HBase
 						for (MatcherSample sample : v)
 							state.update(broadcasted.getValue().getBarefootMatcher().execute(state.vector(), state.sample(), sample), sample);
-		
-						System.out.println("found state = " + state);
+
 						return state;
 					}
 		});
+
+//		The following action saves the rows one by one! Replaced with BulkPut but kept because it works more often than BulkPut!
+//		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.foreachRDD(rdd -> {
+//			rdd.foreach(value -> {
+//				//println(value._1 + ", " + value._2.toJSON().toString());
+//				broadcasted.getValue().saveKstateJSONtoHBase(new String(value._1), value._2);
+//			});
+//		});
 		
 		
-		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.mapValues(v -> v.toJSON().toString()).print();
-		/*linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState
-				.mapValues(
-						x -> "Result = "
-								+ x.sequence().get(0).point().geometry().getY()
-								+ ", "
-								+ x.sequence().get(0).point().geometry().getX())
-				.print();
-
-		JavaPairDStream<String, String> linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON = linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState
-				.mapValues(v -> v.toJSON().toString());
-
-		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToKStateJSON
-				.foreachRDD(rdd -> {
-					rdd.foreach(v -> {
-						println(v._1 + ", " + v._2);
-						broadcasted.getValue().saveKstateJSONtoHBase(new String(v._1), new String(v._2));
-					});
-				});*/
+		JavaDStream<String> javaDstream = keySamplePairInListFormReducedByKeyAndValueMappedToMatcherKState.map(v -> v._1 + "&" + v._2.toJSON().toString());
 		
-		linesInPairedFormWithIDAndGroupedByIDAndValueMappedToMatcherKState.foreachRDD(rdd -> {
-			rdd.foreach(value -> {
-				println(value._1 + ", " + value._2.toJSON().toString());
-				broadcasted.getValue().saveKstateJSONtoHBase(new String(value._1), value._2);
-			});
-		});
-
+		hbaseContext.streamBulkPut(javaDstream, TableName.valueOf("samples"), new PutFunction());
+		
 		ssc.start();
 		ssc.awaitTermination();
+		ssc.close();
 	}
 
 	/**
@@ -210,8 +209,20 @@ public class Driver {
 
 	}
 
-	private static void println(String s) {
-		System.out.println("outout = " + s);
-	}
+	
+	public static class PutFunction implements Function<String, Put> {
+
+	    private static final long serialVersionUID = 1L;
+
+	    public Put call(String v) throws Exception {
+	      String[] part = v.split("&"); 					// <-- Breaking into rowKey and the JSON value
+	      String rowKey = part[0].replace("\\", "").trim(); // <-- Chiseling rough edges!
+	      String value = part[1];
+	      Put p = new Put(Bytes.toBytes(rowKey));
+	      p.addColumn(Bytes.toBytes("kstate"), Bytes.toBytes("json"), Bytes.toBytes(value));
+	      return p;
+	    }
+
+	  }
 
 }
