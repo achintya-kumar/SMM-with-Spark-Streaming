@@ -25,6 +25,7 @@ import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.log4j.Level;
 import org.apache.log4j.Logger;
 import org.apache.spark.SparkConf;
+import org.apache.spark.SparkEnv;
 import org.apache.spark.api.java.JavaSparkContext;
 import org.apache.spark.api.java.function.Function;
 import org.apache.spark.broadcast.Broadcast;
@@ -65,7 +66,7 @@ public class Driver {
 		System.out.println("Local execution is DEACTIVATED!");
 		SparkConf conf = new SparkConf().setAppName("spark_kafka").setMaster("local[*]");
 		JavaSparkContext sc = new JavaSparkContext(conf);
-		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(4000));
+		JavaStreamingContext ssc = new JavaStreamingContext(sc, Durations.milliseconds(6000));
 		ssc.checkpoint("/tmp");
 
 		// Create table if it doesn't exist
@@ -80,7 +81,7 @@ public class Driver {
 		JavaHBaseContext hbaseContext = new JavaHBaseContext(sc, hBaseConfiguration);
 		// Broadcasting some utilities
 		RoadMap map = RoadMap.Load(new BfmapReader("./oberbayern.bfmap"));
-		System.out.println("MAP LOADING ENDED!");
+		System.out.println("Map has been loaded! Index construction will be done lazily within broadcastVariable.");
 		Broadcast<BroadcastedUtilities> broadcasted = ssc.sparkContext().broadcast(new BroadcastedUtilities(map));
 		
 
@@ -93,7 +94,7 @@ public class Driver {
 
 		// Getting streams from Kafka
 		JavaPairInputDStream<String, String> kafkaStreams = KafkaUtils.createDirectStream(ssc, String.class, String.class, StringDecoder.class, StringDecoder.class, kafkaParams, topic);
-		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2)/*ssc.socketTextStream("node3", 1111) /*KEPT FOR TESTING PURPOSES!*/;
+		JavaDStream<String> lines = kafkaStreams.map(Tuple2::_2)/*ssc.socketTextStream("localhost", 1111) /*KEPT FOR TESTING PURPOSES!*/;
 
 		// Creating a pair Dstream with the ID as the key
 		JavaPairDStream<String, String> linesInPairedFormWithID = lines.mapToPair(line -> {
@@ -102,59 +103,77 @@ public class Driver {
 					return new Tuple2<>(deviceID, line);
 				});
 		
-		// Grouping the Dstreams by the key
+		// Converting the String values to List<String> values, for easier reduction in the subsequent step.
 		JavaPairDStream<String, List<String>> linesInPairedFormWithIDinListForm = linesInPairedFormWithID.mapValues(v -> {
 			List<String> inListForm = new ArrayList<>();
 			inListForm.add(v);
 			return inListForm;
 		});
 		
-		
-		JavaPairDStream<String, List<String>> linesInPairedFormWithIDAndGroupedByID = linesInPairedFormWithIDinListForm.reduceByKey((a, b) -> { // <-- Replaced groupByKey with reduceByKey, because LESS SHUFFLING!
+		// Initially, groupByKey seemed easier to go with. But after realizing high costs of shuffling associated with it,
+		// we have used reduceByKey to achieve the same functionality. We wish to have all the samples from the same device
+		// on the same node. ReduceByKey brings them together on a single machine with less shuffling operations.
+		JavaPairDStream<String, List<String>> linesInPairedFormWithIDAndGroupedByID = linesInPairedFormWithIDinListForm.reduceByKey((a, b) -> {
 			a.addAll(b);
 			return a;
 		});
 		
 		// Stateful transformation begins here
+		// This is where the heart of the implementation lies. The previous design which had to retrieve old KState JSON from
+		// 'samples' HBase table was proving to be a bottleneck. Additionally, the problem is related to state-updation.
+		// Inspired by Stateful Network Wordcount, the application now performs the state-updation of KState by sharing results
+		// across batches and thereby the dependence on HBase per batch-interval is eliminated.
 		JavaPairDStream<String, Tuple2<String, Long>> deviceIdPairedWithKstate = linesInPairedFormWithIDAndGroupedByID.updateStateByKey((samples, currentKState) -> {
+			
+			// If a device has been inactive in terms of sample-transmission for more than 5 minutes,
+			// it should be dropped from the state-update loop. Otherwise, the length of items to process
+			// will keep growing indefinitely.
 			if(samples.isEmpty()) {
-				if(currentKState.get()._2() == 0L)  // <-- It was seen recently, but now it isn't sending samples. 
-					return Optional.of(new Tuple2<>(currentKState.get()._1(), System.currentTimeMillis()));  // <-- Tagging this for monitoring; if inactive for long, it must be dropped from the loop.
-				else if(currentKState.get()._2() != 0L) {  // <-- So it has no new samples, and also was tagged for monitoring in some previous cycle.
-					long timeSinceLastSeen = (System.currentTimeMillis() - currentKState.get()._2())/60; // <-- How long has it been since it was last seen?
-					if(timeSinceLastSeen >= 10)  // <-- If it has been 10 minutes since it was last seen, maybe it isn't moving anymore and therefore must be removed from looping
-						return Optional.absent(); // <-- Indicating spark that it must be dropped from the loop.
-					else 
-						return currentKState; // <-- It's not sending new samples, but it has been less than 10 minutes since it was last seen. Therefore keeping it in loop.
+				System.out.println("EMPTY SAMPLES FOUND!");
+				long inactivityTolerance = 5 * 60 * 1000; // <-- Must be in milliseconds. Currently at 5 minutes.
+				if(System.currentTimeMillis() - currentKState.get()._2() >= inactivityTolerance) {
+					System.out.println("IT'S BEEN MORE THAN 5 MINUTES!");
+					return Optional.absent(); // <-- Dropping it from state-update loop!
 				}
+				return Optional.of(new Tuple2<>(currentKState.get()._1(), currentKState.get()._2()));
 			}
 			
+			// The updateStateByKey API reduces all the values for a key into a list.
+			// Since the values are already reduced, the API will produce a list with just one item.
 			Iterator<String> iterator = samples.get(0).iterator();
 			List<MatcherSample> matcherSamples = new ArrayList<>();
 			while (iterator.hasNext()) {
 				matcherSamples.add(new MatcherSample(new JSONObject(iterator.next())));
 			}
 			
+			// Unsorted samples lead to runtime exceptions
 			Collections.sort(matcherSamples, (a, b) -> {
 				Long aTime = new Long(a.time());
 				Long bTime = new Long(b.time());
 				return aTime.compareTo(bTime);
 			});
 			
-			if(!currentKState.isPresent()) {
+			// If the samples are present, then it maybe from a known device or a completely new device.
+			if(!currentKState.isPresent()) { // <-- Never seen before
 				String kStateJSON = broadcasted.getValue().getBarefootMatcher().mmatch(matcherSamples, 1, 150).toJSON().toString();
-				return Optional.of(new Tuple2<>(kStateJSON, 0L));  // <-- 0 because it is not being considered for monitoring.
-			} else {
+				return Optional.of(new Tuple2<>(kStateJSON, System.currentTimeMillis()));  // <-- Tagging when it was last seen
+			} else { // <-- Seen before, hence updating existing kStateJSON
 				System.out.println("OLD STATE JSON = " + currentKState.get()._1());
 				MatcherKState state = new MatcherKState(new JSONObject(/*TO CHECK*/currentKState.get()._1()), new MatcherFactory(broadcasted.getValue().getRoadMap()));
 				for (MatcherSample sample : matcherSamples)
 					state.update(broadcasted.getValue().getBarefootMatcher().execute(state.vector(), state.sample(), sample), sample);
 				
-				return Optional.of(new Tuple2<>(state.toJSON().toString(), 0L));  // <-- 0 because it is not being considered for monitoring.
+				return Optional.of(new Tuple2<>(state.toJSON().toString(), System.currentTimeMillis()));  // <-- Tagging when it was last seen
 			}
 		});
 				
-				
+		
+		// HBaseContext works with DStreams and not with PairDStreams, apparently. Hardly a problem though.	
+		// The following two transformations will save to 2 different tables, one is for storage of KState JSON,
+		// which gets used in tracking. The other transformation is for saving the path-trace in a human-friendly 
+		// JSON format. The following are the transformations to HBase table mappings:
+		// KStateJSON -> samples
+		// pathTrace  -> results
 		JavaDStream<Tuple2<String, String>> javaDstreamForKState = deviceIdPairedWithKstate.map(v -> new Tuple2<>(v._1, v._2._1)).persist(StorageLevel.MEMORY_AND_DISK());
 		
 		JavaDStream<Tuple2<String, String>> javaDstreamForPathTrace = javaDstreamForKState.map(v -> {
@@ -248,6 +267,11 @@ public class Driver {
 
 	}
 
+	
+	/**
+	* The following Function classes are used to convert DStreams into Put objects for
+	* bulk-storing into HBase tables.
+	*/
 	
 	public static class PutFunctionForKState implements Function<Tuple2<String, String>, Put> {
 
