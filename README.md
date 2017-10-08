@@ -4,3 +4,14 @@ Recent times have seen remarkable increase in number of mobile devices connected
 
 This project is based on BMWCarIT's Barefoot library.
 Check out the source here: https://github.com/bmwcarit/barefoot
+
+## Setup
+This project is composed in Cloudera Quickstart VM. 
+1. Install Maven and Java 8. (Set ```JAVA_HOME``` if required)<br />
+2. As mentioned above, the project requires Barefoot library jar as a Maven dependency. It is therefore necessary that Barefoot is downloaded and installed as follows:<br />
+```git clone https://github.com/bmwcarit/barefoot.git```<br />
+```cd barefoot```<br />
+```mvn clean install -DskipTests``` 
+3. Now the project can be built
+```mvn clean package```<br />
+      Add ```-q``` to build silently. 
