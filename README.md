@@ -9,7 +9,7 @@ The final report can be found here:
 https://github.com/achintya-kumar/SMM-with-Spark-Streaming/blob/master/Scalable_Map_Matching_Final_Report.pdf
 
 ## Setup
-This project is composed in Cloudera Quickstart VM. 
+This project is composed in Cloudera Quickstart VM and later tested on a fully-distributed Cloudera cluster. For specifications of the cluster, kindly refer to the above project report. 
 1. Install Maven and Java 8. (Set ```JAVA_HOME``` if required)<br />
 2. As mentioned above, the project requires Barefoot library jar as a Maven dependency. It is therefore necessary that Barefoot is downloaded and installed as follows:<br />
 ```git clone https://github.com/bmwcarit/barefoot.git```<br />
