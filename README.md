@@ -5,6 +5,9 @@ Recent times have seen remarkable increase in number of mobile devices connected
 This project is based on BMWCarIT's Barefoot library.
 Check out the source here: https://github.com/bmwcarit/barefoot
 
+The final report can be found here: 
+https://github.com/achintya-kumar/SMM-with-Spark-Streaming/blob/master/Scalable_Map_Matching_Final_Report.pdf
+
 ## Setup
 This project is composed in Cloudera Quickstart VM. 
 1. Install Maven and Java 8. (Set ```JAVA_HOME``` if required)<br />
