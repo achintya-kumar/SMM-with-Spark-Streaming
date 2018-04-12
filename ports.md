@@ -10,7 +10,7 @@
 2181 - Zookeeper  
 8082 - Kafka REST Proxy Server (using Confluent Platform)
 60010 - HBase Master  
-60020 - HBase Region Server  
+60020 - HBase Region Server  <br><br>
 
 ### HDFS Filesystem URI
 hdfs://NameNodeHost:8020/
