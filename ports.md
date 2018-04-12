@@ -12,5 +12,5 @@
 60010 - HBase Master  
 60020 - HBase Region Server  
 
-# HDFS Filesystem URI
+### HDFS Filesystem URI
 hdfs://NameNodeHost:8020/
